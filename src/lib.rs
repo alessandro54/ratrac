@@ -2,4 +2,7 @@ pub mod bitstream;
 pub mod util;
 pub mod mdct;
 pub mod qmf;
+pub mod aea;
+pub mod transient_detector;
+pub mod psychoacoustic;
 pub mod atrac1;

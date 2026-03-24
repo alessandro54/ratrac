@@ -130,6 +130,8 @@ impl Default for Atrac1EncodeSettings {
     }
 }
 
+pub mod qmf;
+
 #[cfg(test)]
 #[path = "../tests/atrac1_tests.rs"]
 mod tests;
