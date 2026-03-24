@@ -5,4 +5,5 @@ pub mod qmf;
 pub mod aea;
 pub mod transient_detector;
 pub mod psychoacoustic;
+pub mod scaler;
 pub mod atrac1;

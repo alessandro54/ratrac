@@ -131,6 +131,8 @@ impl Default for Atrac1EncodeSettings {
 }
 
 pub mod qmf;
+pub mod dequantiser;
+pub mod bitalloc;
 
 #[cfg(test)]
 #[path = "../tests/atrac1_tests.rs"]
