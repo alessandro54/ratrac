@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use ratrac::aea::{AEA_FRAME_SIZE, AeaReader, AeaWriter};
 use ratrac::atrac1::decoder::Atrac1Decoder;
@@ -53,6 +54,29 @@ enum Commands {
     },
 }
 
+fn make_progress_bar(total: u64, msg: &str) -> ProgressBar {
+    let pb = ProgressBar::new(total);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{msg} {bar:40.green/black} {percent}% ({pos}/{len}) [{elapsed_precise} / {eta_precise}]",
+        )
+        .unwrap()
+        .progress_chars("█░"),
+    );
+    pb.set_message(msg.to_string());
+    pb
+}
+
+fn format_duration(seconds: f64) -> String {
+    let mins = (seconds / 60.0) as u64;
+    let secs = seconds % 60.0;
+    if mins > 0 {
+        format!("{mins}m {secs:.0}s")
+    } else {
+        format!("{secs:.1}s")
+    }
+}
+
 fn encode(
     input: &PathBuf,
     output: &PathBuf,
@@ -60,7 +84,6 @@ fn encode(
     bfu_idx_fast: bool,
     notransient: Option<Option<u32>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Read audio using symphonia (supports WAV, FLAC, MP3, AAC, OGG)
     let audio = read_audio(input)?;
 
     if audio.sample_rate != 44100 {
@@ -73,23 +96,23 @@ fn encode(
 
     let num_channels = audio.channels;
     let total_samples = audio.num_frames();
+    let duration_secs = total_samples as f64 / 44100.0;
 
     eprintln!(
-        "Input: {} ({} ch, {} Hz, {} samples)",
+        "  Input:  {} ({} ch, {} Hz, {})",
         input.display(),
         num_channels,
         audio.sample_rate,
-        total_samples,
+        format_duration(duration_secs),
     );
 
     let samples = audio.samples;
 
-    // Encoder settings
     let (window_mode, window_mask) = match notransient {
         Some(mask_opt) => {
             let mask = mask_opt.unwrap_or(0);
             eprintln!(
-                "Transient detection disabled, bands: low={}, mid={}, hi={}",
+                "  Transient detection disabled (mask: low={}, mid={}, hi={})",
                 if mask & 1 != 0 { "short" } else { "long" },
                 if mask & 2 != 0 { "short" } else { "long" },
                 if mask & 4 != 0 { "short" } else { "long" },
@@ -107,31 +130,31 @@ fn encode(
     };
 
     let mut encoder = Atrac1Encoder::new(settings);
-
-    // Calculate frames
     let num_frames = total_samples.div_ceil(NUM_SAMPLES as u64);
 
-    // Create AEA output
     let mut writer = AeaWriter::create(
         output,
         "ratrac",
         num_channels,
         (num_frames * num_channels as u64) as u32,
     )?;
-
-    // First write is skipped (dummy)
     writer.write_frame(&[0; AEA_FRAME_SIZE])?;
 
+    let input_size = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
+    let output_size_est = 2048 + num_frames * 212 * num_channels as u64;
+    let ratio = input_size as f64 / output_size_est as f64;
+
     eprintln!(
-        "Output: {} (ATRAC1, {} frames)",
+        "  Output: {} (ATRAC1, {} frames, ~{:.1}x compression)",
         output.display(),
         num_frames,
+        ratio,
     );
 
-    // Process frames
+    let pb = make_progress_bar(num_frames, "Encoding");
+
     let frame_size = NUM_SAMPLES * num_channels;
     let mut pos = 0;
-    let mut frame_count = 0u64;
 
     while pos < samples.len() {
         let mut pcm_frame = vec![0.0f32; frame_size];
@@ -145,16 +168,12 @@ fn encode(
         }
 
         pos += frame_size;
-        frame_count += 1;
-
-        if frame_count % 100 == 0 {
-            let pct = (frame_count * 100) / num_frames;
-            eprint!("\r  {pct}% done");
-        }
+        pb.inc(1);
     }
 
     writer.flush()?;
-    eprintln!("\rDone ({frame_count} frames encoded)");
+    pb.finish_and_clear();
+    eprintln!("  Done.");
     Ok(())
 }
 
@@ -162,48 +181,44 @@ fn decode(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::E
     let mut reader = AeaReader::open(input)?;
     let num_channels = reader.channel_num();
     let total_samples = reader.length_in_samples();
+    let duration_secs = total_samples as f64 / 44100.0;
 
     eprintln!(
-        "Input: {} ({} ch, name=\"{}\", {} samples)",
+        "  Input:  {} ({} ch, name=\"{}\", {})",
         input.display(),
         num_channels,
         reader.name(),
-        total_samples,
+        format_duration(duration_secs),
     );
+    eprintln!("  Output: {} (WAV, 16-bit)", output.display());
 
     let mut wav_writer = WavWriter::create(output, num_channels as u16, 44100)?;
-
     let mut decoder = Atrac1Decoder::new();
 
     reader.read_frame()?;
 
-    eprintln!("Output: {} (WAV, 16-bit)", output.display());
-
-    let mut frame_count = 0u64;
     let total_frames = if total_samples > 0 {
         total_samples / NUM_SAMPLES as u64
     } else {
-        u64::MAX
+        0
     };
+
+    let pb = make_progress_bar(total_frames, "Decoding");
 
     loop {
         let result = decoder.decode_frame_interleaved(&mut reader);
         match result {
             Some(samples) => {
                 wav_writer.write_samples(&samples)?;
-                frame_count += 1;
-
-                if frame_count % 100 == 0 {
-                    let pct = (frame_count * 100).min(total_frames * 100) / total_frames.max(1);
-                    eprint!("\r  {pct}% done");
-                }
+                pb.inc(1);
             }
             None => break,
         }
     }
 
     wav_writer.finalize()?;
-    eprintln!("\rDone ({frame_count} frames decoded)");
+    pb.finish_and_clear();
+    eprintln!("  Done.");
     Ok(())
 }
 

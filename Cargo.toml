@@ -7,3 +7,4 @@ edition = "2024"
 rustfft = "6"
 clap = { version = "4", features = ["derive"] }
 symphonia = { version = "0.5", features = ["flac", "pcm", "wav", "mp3", "aac", "vorbis", "ogg"] }
+indicatif = "0.17"
