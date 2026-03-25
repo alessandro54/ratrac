@@ -1,5 +1,5 @@
 use crate::atrac1::{BlockSizeMod, NUM_QMF, SINE_WINDOW};
-use crate::mdct::{Mdct, Midct};
+use crate::mdct::{Mdct, Midct64};
 use crate::util::swap_array;
 
 /// Windowed overlap function matching C++ vector_fmul_window.
@@ -41,9 +41,9 @@ pub struct Atrac1Mdct {
     mdct512: Mdct,
     mdct256: Mdct,
     mdct64: Mdct,
-    midct512: Midct,
-    midct256: Midct,
-    midct64: Midct,
+    midct512: Midct64,
+    midct256: Midct64,
+    midct64: Midct64,
 }
 
 impl Default for Atrac1Mdct {
@@ -58,9 +58,9 @@ impl Atrac1Mdct {
             mdct512: Mdct::new(512, 1.0),
             mdct256: Mdct::new(256, 0.5),
             mdct64: Mdct::new(64, 0.5),
-            midct512: Midct::new(512, 512.0 * 2.0),
-            midct256: Midct::new(256, 256.0 * 2.0),
-            midct64: Midct::new(64, 64.0 * 2.0),
+            midct512: Midct64::new(512, 512.0 * 2.0),
+            midct256: Midct64::new(256, 256.0 * 2.0),
+            midct64: Midct64::new(64, 64.0 * 2.0),
         }
     }
 

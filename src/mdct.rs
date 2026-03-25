@@ -180,6 +180,104 @@ impl Midct {
     }
 }
 
+/// High-precision inverse MDCT using f64 internally.
+/// Takes f32 input, computes in f64, returns f32 output.
+/// Reduces reconstruction noise in the decoder path.
+pub struct Midct64 {
+    n: usize,
+    sin_cos: Vec<f64>,
+    fft_in: Vec<Complex<f64>>,
+    fft_out: Vec<Complex<f64>>,
+    buf: Vec<f32>,
+    planner: std::sync::Arc<dyn rustfft::Fft<f64>>,
+}
+
+impl Midct64 {
+    pub fn new(n: usize, scale: f32) -> Self {
+        let n4 = n / 4;
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(n4);
+
+        // Compute twiddles in f64 (same formula as calc_sin_cos but kept as f64)
+        let scale_d = (scale as f64 / 2.0) / n as f64;
+        let scale_d = scale_d.sqrt();
+        let alpha = 2.0 * std::f64::consts::PI / (8.0 * n as f64);
+        let omega = 2.0 * std::f64::consts::PI / n as f64;
+        let mut sin_cos = vec![0.0f64; n / 2];
+        for i in 0..n4 {
+            sin_cos[2 * i] = scale_d * (omega * i as f64 + alpha).cos();
+            sin_cos[2 * i + 1] = scale_d * (omega * i as f64 + alpha).sin();
+        }
+
+        Self {
+            n,
+            sin_cos,
+            fft_in: vec![Complex::new(0.0, 0.0); n4],
+            fft_out: vec![Complex::new(0.0, 0.0); n4],
+            buf: vec![0.0f32; n],
+            planner: fft,
+        }
+    }
+
+    pub fn process(&mut self, input: &[f32]) -> &[f32] {
+        let n = self.n;
+        let n2 = n / 2;
+        let n4 = n / 4;
+        let n34 = 3 * n4;
+        let n54 = 5 * n4;
+
+        for i in (0..n2).step_by(2) {
+            let r0 = input[i] as f64;
+            let i0 = input[n2 - 1 - i] as f64;
+
+            let c = self.sin_cos[i];
+            let s = self.sin_cos[i + 1];
+
+            self.fft_in[i / 2] = Complex::new(
+                -2.0 * (i0 * s + r0 * c),
+                -2.0 * (i0 * c - r0 * s),
+            );
+        }
+
+        self.fft_out.copy_from_slice(&self.fft_in);
+        self.planner.process(&mut self.fft_out);
+
+        for i in (0..n4).step_by(2) {
+            let r0 = self.fft_out[i / 2].re;
+            let i0 = self.fft_out[i / 2].im;
+
+            let c = self.sin_cos[i];
+            let s = self.sin_cos[i + 1];
+
+            let r1 = r0 * c + i0 * s;
+            let i1 = r0 * s - i0 * c;
+
+            self.buf[n34 - 1 - i] = r1 as f32;
+            self.buf[n34 + i] = r1 as f32;
+            self.buf[n4 + i] = i1 as f32;
+            self.buf[n4 - 1 - i] = (-i1) as f32;
+        }
+
+        for i in (n4..n2).step_by(2) {
+            let r0 = self.fft_out[i / 2].re;
+            let i0 = self.fft_out[i / 2].im;
+
+            let c = self.sin_cos[i];
+            let s = self.sin_cos[i + 1];
+
+            let r1 = r0 * c + i0 * s;
+            let i1 = r0 * s - i0 * c;
+
+            self.buf[n34 - 1 - i] = r1 as f32;
+            self.buf[i - n4] = (-r1) as f32;
+            self.buf[n4 + i] = i1 as f32;
+            self.buf[n54 - 1 - i] = i1 as f32;
+        }
+
+        &self.buf
+    }
+}
+
 #[cfg(test)]
 #[path = "tests/mdct_tests.rs"]
 mod tests;

@@ -58,7 +58,7 @@ impl WavWriter {
         let mut byte_buf = Vec::with_capacity(samples.len() * 2);
         for &s in samples {
             let clamped = s.clamp(-1.0, 1.0);
-            let i16_val = (clamped * 32767.0) as i16;
+            let i16_val = (clamped * 32767.0).round_ties_even() as i16;
             byte_buf.extend_from_slice(&i16_val.to_le_bytes());
         }
         self.writer.write_all(&byte_buf)?;

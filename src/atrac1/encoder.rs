@@ -2,7 +2,7 @@ use crate::atrac1::bitalloc::write_frame;
 use crate::atrac1::mdct_impl::Atrac1Mdct;
 use crate::atrac1::qmf::Atrac1AnalysisFilterBank;
 use crate::atrac1::{Atrac1EncodeSettings, BlockSizeMod, NUM_SAMPLES, WindowMode};
-use crate::psychoacoustic::{create_loudness_curve, track_loudness_mono, track_loudness_stereo};
+use crate::psychoacoustic::create_loudness_curve;
 use crate::scaler::Scaler;
 use crate::transient_detector::TransientDetector;
 use crate::util::invert_spectr;
@@ -33,7 +33,7 @@ pub struct Atrac1Encoder {
     transient_detectors: [ChannelTransientDetectors; 2],
     scaler: Scaler,
     loudness_curve: Vec<f32>,
-    loudness: f32,
+    loudness: f64, // f64 to prevent FP error accumulation over thousands of frames
 
     pcm_buf_low: [[f32; 256 + 16]; 2],
     pcm_buf_mid: [[f32; 256 + 16]; 2],
@@ -55,7 +55,7 @@ impl Atrac1Encoder {
             ],
             scaler: Scaler::new(),
             loudness_curve: create_loudness_curve(NUM_SAMPLES),
-            loudness: LOUD_FACTOR,
+            loudness: LOUD_FACTOR as f64,
 
             pcm_buf_low: [[0.0; 256 + 16]; 2],
             pcm_buf_mid: [[0.0; 256 + 16]; 2],
@@ -67,7 +67,7 @@ impl Atrac1Encoder {
         &mut self,
         pcm: &[f32],
         channel: usize,
-    ) -> (Vec<f32>, f32, u32, BlockSizeMod) {
+    ) -> (Vec<f32>, f64, u32, BlockSizeMod) {
         self.analysis_filter_bank[channel].analysis(
             pcm,
             &mut self.pcm_buf_low[channel][..128],
@@ -104,10 +104,10 @@ impl Atrac1Encoder {
             &block_size,
         );
 
-        let frame_loudness: f32 = specs
+        let frame_loudness: f64 = specs
             .iter()
             .zip(self.loudness_curve.iter())
-            .map(|(&s, &c)| s * s * c)
+            .map(|(&s, &c)| (s as f64) * (s as f64) * (c as f64))
             .sum();
 
         (specs, frame_loudness, window_mask, block_size)
@@ -119,14 +119,14 @@ impl Atrac1Encoder {
             self.encode_channel(pcm, channel);
 
         if window_mask == 0 {
-            self.loudness = track_loudness_mono(self.loudness, frame_loudness);
+            self.loudness = 0.98 * self.loudness + 0.02 * frame_loudness;
         }
 
         let scaled_blocks = self.scaler.scale_frame(&specs, &block_size);
         let (frame, _) = write_frame(
             &scaled_blocks,
             &block_size,
-            self.loudness / LOUD_FACTOR,
+            (self.loudness / LOUD_FACTOR as f64) as f32,
             self.settings.bfu_idx_const,
             self.settings.fast_bfu_num_search,
         );
@@ -141,7 +141,7 @@ impl Atrac1Encoder {
         pcm: &[f32],
         num_channels: usize,
     ) -> Vec<Vec<u8>> {
-        let mut channel_data: Vec<(Vec<f32>, f32, u32, BlockSizeMod)> =
+        let mut channel_data: Vec<(Vec<f32>, f64, u32, BlockSizeMod)> =
             Vec::with_capacity(num_channels);
 
         for ch in 0..num_channels {
@@ -154,10 +154,11 @@ impl Atrac1Encoder {
 
         let window_masks: Vec<u32> = channel_data.iter().map(|d| d.2).collect();
         if num_channels == 2 && window_masks[0] == 0 && window_masks[1] == 0 {
+            // Stereo loudness in f64
             self.loudness =
-                track_loudness_stereo(self.loudness, channel_data[0].1, channel_data[1].1);
+                0.98 * self.loudness + 0.01 * (channel_data[0].1 + channel_data[1].1);
         } else if window_masks[0] == 0 {
-            self.loudness = track_loudness_mono(self.loudness, channel_data[0].1);
+            self.loudness = 0.98 * self.loudness + 0.02 * channel_data[0].1;
         }
 
         let mut frames = Vec::with_capacity(num_channels);
@@ -167,7 +168,7 @@ impl Atrac1Encoder {
             let (frame, _) = write_frame(
                 &scaled_blocks,
                 block_size,
-                self.loudness / LOUD_FACTOR,
+                (self.loudness / LOUD_FACTOR as f64) as f32,
                 self.settings.bfu_idx_const,
                 self.settings.fast_bfu_num_search,
             );
