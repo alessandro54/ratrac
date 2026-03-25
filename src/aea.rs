@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 
 pub const AEA_META_SIZE: usize = 2048;
@@ -33,7 +33,7 @@ impl std::error::Error for AeaError {}
 
 /// AEA file reader for ATRAC1 compressed data.
 pub struct AeaReader {
-    file: File,
+    file: BufReader<File>,
     header: [u8; AEA_META_SIZE],
     file_size: u64,
 }
@@ -45,6 +45,8 @@ impl AeaReader {
 
         let mut header = [0u8; AEA_META_SIZE];
         file.read_exact(&mut header)?;
+
+        let file = BufReader::with_capacity(64 * 1024, file);
 
         // Validate magic bytes
         if header[0..4] != AEA_MAGIC {
@@ -113,7 +115,7 @@ impl AeaReader {
 
 /// AEA file writer for ATRAC1 compressed data.
 pub struct AeaWriter {
-    file: File,
+    file: BufWriter<File>,
     first_write: bool,
 }
 
@@ -124,7 +126,8 @@ impl AeaWriter {
         num_channels: usize,
         num_frames: u32,
     ) -> Result<Self, AeaError> {
-        let mut file = File::create(path)?;
+        let file = File::create(path)?;
+        let mut file = BufWriter::with_capacity(64 * 1024, file);
 
         // Build header
         let mut header = [0u8; AEA_META_SIZE];

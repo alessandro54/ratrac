@@ -66,18 +66,15 @@ impl BitStream {
         let bytes_pos = self.read_pos / 8;
         let overlap = self.read_pos % 8;
 
-        let mut t: u32 = 0;
+        // Load up to 4 bytes in big-endian order into a u32.
+        // C++ does t.bytes[3-i] = Buf[pos+i], which is big-endian packing.
         let count = n / 8 + if overlap > 0 { 2 } else { 1 };
-        // Read bytes into u32 big-endian (matching C++ `t.bytes[3-i] = Buf[pos+i]`)
-        let t_bytes: &mut [u8; 4] = unsafe { &mut *(&mut t as *mut u32 as *mut [u8; 4]) };
+        let mut be_bytes = [0u8; 4];
         for i in 0..count {
-            // On LE CPU, C++ does t.bytes[3-i] = Buf[pos+i]
-            // to_be_bytes()[i] == bytes[3-i] on LE, so we use be indexing
-            t_bytes[3 - i] = self.buf[bytes_pos + i];
+            be_bytes[3 - i] = self.buf[bytes_pos + i];
         }
+        let mut t = u32::from_le_bytes(be_bytes);
 
-        // Now t has the bytes loaded in big-endian layout on LE
-        // C++ does: t.ui = (t.ui << overlap >> (32 - n))
         t = (t << overlap) >> (32 - n);
 
         self.read_pos += n;
