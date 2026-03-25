@@ -29,6 +29,8 @@ impl std::fmt::Display for AeaError {
     }
 }
 
+impl std::error::Error for AeaError {}
+
 /// AEA file reader for ATRAC1 compressed data.
 pub struct AeaReader {
     file: File,

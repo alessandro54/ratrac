@@ -71,10 +71,10 @@ impl Qmf {
             self.pcm_buffer_merge[new_part_start + i + 3] = lower[i / 2 + 1] - upper[i / 2 + 1];
         }
 
-        // Windowed filtering
+        // Windowed filtering: winP starts at PcmBufferMerge[0], advances by 2 each step
         let mut out_idx = 0;
-        for _j in (0..n_in / 2).rev() {
-            let win_start = out_idx; // winP advances by 2 each iteration
+        for _j in 0..n_in / 2 {
+            let win_start = out_idx;
             let mut s1 = 0.0f32;
             let mut s2 = 0.0f32;
             for i in (0..48).step_by(2) {

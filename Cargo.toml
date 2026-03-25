@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 rustfft = "6"
+hound = "3"
+clap = { version = "4", features = ["derive"] }

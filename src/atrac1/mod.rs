@@ -133,6 +133,9 @@ impl Default for Atrac1EncodeSettings {
 pub mod qmf;
 pub mod dequantiser;
 pub mod bitalloc;
+pub mod mdct_impl;
+pub mod decoder;
+pub mod encoder;
 
 #[cfg(test)]
 #[path = "../tests/atrac1_tests.rs"]
