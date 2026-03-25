@@ -1,3 +1,12 @@
+//! Psychoacoustic model for ATRAC1 bit allocation.
+//!
+//! Provides the Absolute Threshold of Hearing (ATH), loudness weighting,
+//! and scale factor spread analysis. These determine which spectral
+//! coefficients the human ear can't hear (and can therefore get fewer bits).
+//!
+//! The ATH formula is from Frank Klemm's Musepack encoder — a lookup table
+//! with linear interpolation covering 10 Hz to 30 kHz.
+
 /// ATH lookup table from Musepack (Frank Klemm).
 /// 128 entries in millibel relative to 20 µPa.
 /// Covers 10 Hz to ~30 kHz, 4 steps per third of an octave.

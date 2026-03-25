@@ -1,8 +1,29 @@
+//! Transient detector for ATRAC1 adaptive window switching.
+//!
+//! When audio has a sudden attack (drum hit, consonant), the encoder switches
+//! from one long MDCT window to multiple short windows. This prevents
+//! "pre-echo" — a smeared ghost of the transient appearing before the attack.
+//!
+//! Detection works by HP-filtering the signal (to isolate attack energy),
+//! then comparing RMS energy between consecutive short blocks. A sudden
+//! rise (>16 dB) or fall (>20 dB) triggers a transient.
+
+/// Number of samples of history kept between calls for the HP filter.
 const PREV_BUF_SZ: usize = 20;
+
+/// Length of the symmetric FIR high-pass filter.
 const FIR_LEN: usize = 21;
 
-/// FIR high-pass filter coefficients (10 values, each pre-multiplied by 2.0).
-/// Symmetric filter: applied to pairs (i, FIR_LEN-i).
+/// Energy rise threshold: 16 dB increase triggers a transient.
+const RISING_THRESHOLD_DB: f32 = 16.0;
+
+/// Energy fall threshold: 20 dB decrease triggers a transient.
+const FALLING_THRESHOLD_DB: f32 = 20.0;
+
+/// Scaling factor for RMS-to-dB conversion (19 * log10).
+const RMS_TO_DB_SCALE: f32 = 19.0;
+
+/// FIR high-pass filter coefficients (10 symmetric half-taps, pre-multiplied by 2.0).
 const FIRCOEF: [f32; 10] = [
     -8.65163e-18 * 2.0,
     -0.00851586 * 2.0,
@@ -90,13 +111,13 @@ impl TransientDetector {
         for i in 1..n_blocks_to_analyze {
             let start = (i - 1) * self.short_sz;
             rms_per_block[i] =
-                19.0 * calculate_rms(&filtered[start..start + self.short_sz]).log10();
+                RMS_TO_DB_SCALE * calculate_rms(&filtered[start..start + self.short_sz]).log10();
 
-            if rms_per_block[i] - rms_per_block[i - 1] > 16.0 {
+            if rms_per_block[i] - rms_per_block[i - 1] > RISING_THRESHOLD_DB {
                 trans = true;
                 self.last_transient_pos = i as u16;
             }
-            if rms_per_block[i - 1] - rms_per_block[i] > 20.0 {
+            if rms_per_block[i - 1] - rms_per_block[i] > FALLING_THRESHOLD_DB {
                 trans = true;
                 self.last_transient_pos = i as u16;
             }

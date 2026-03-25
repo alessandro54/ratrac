@@ -158,32 +158,3 @@ impl FrameReader {
         Ok(Some(frame))
     }
 }
-
-// Keep the old API for tests and backward compatibility
-pub struct AudioData {
-    pub samples: Vec<f32>,
-    pub sample_rate: u32,
-    pub channels: usize,
-}
-
-impl AudioData {
-    pub fn num_frames(&self) -> u64 {
-        self.samples.len() as u64 / self.channels as u64
-    }
-}
-
-/// Read entire audio file into memory (legacy API, used by tests).
-pub fn read_audio(path: &Path) -> Result<AudioData, Box<dyn std::error::Error>> {
-    let mut reader = AudioReader::open(path)?;
-    let mut all_samples = Vec::new();
-
-    while let Some(chunk) = reader.next_chunk()? {
-        all_samples.extend_from_slice(&chunk);
-    }
-
-    Ok(AudioData {
-        samples: all_samples,
-        sample_rate: reader.info.sample_rate,
-        channels: reader.info.channels,
-    })
-}

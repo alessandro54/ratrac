@@ -1,3 +1,16 @@
+//! ATRAC1 dequantiser: reconstructs spectral coefficients from a bitstream.
+//!
+//! The decoder reads an AEA frame (212 bytes) and reconstructs 512 spectral
+//! coefficients. Each BFU (Basic Functional Unit) has:
+//! - A word length (0-15 bits per coefficient)
+//! - A scale factor index (6-bit, indexes into ScaleTable)
+//! - Quantized mantissas (variable bits)
+//!
+//! Reconstruction formula per coefficient:
+//! ```text
+//! spec[i] = ScaleTable[sf_idx] × (1 / (2^(wl-1) - 1)) × MakeSign(mantissa, wl)
+//! ```
+
 use crate::atrac1::{
     BFU_AMOUNT_TAB, BLOCKS_PER_BAND, BlockSizeMod, MAX_BFUS, NUM_QMF, SCALE_TABLE, SPECS_PER_BLOCK,
     SPECS_START_LONG, SPECS_START_SHORT,

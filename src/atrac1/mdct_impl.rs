@@ -1,8 +1,30 @@
+//! ATRAC1 MDCT wrapper: manages forward/inverse transforms for all 3 frequency bands.
+//!
+//! ATRAC1 splits audio into 3 QMF bands (low, mid, high) and applies separate
+//! MDCT transforms to each. This module handles:
+//! - Sine windowing for smooth overlap between frames
+//! - Band-specific transform sizes (256-point for low/mid, 512-point for high)
+//! - Short window mode (multiple 64-point transforms for transient frames)
+//! - Spectral reversal for mid/high bands (required by QMF frequency mirroring)
+//! - 2x amplitude compensation for the high band in short-window mode
+//!
+//! ## Buffer layout
+//! Each band buffer has space for current samples + overlap tail:
+//! ```text
+//! low/mid: [0..128 current] [128..256+16 overlap/tail]
+//! high:    [0..256 current] [256..512+16 overlap/tail]
+//! ```
+
 use crate::atrac1::{BlockSizeMod, NUM_QMF, SINE_WINDOW};
 use crate::mdct::{Mdct, Midct64};
 use crate::util::swap_array;
 
-/// Windowed overlap function matching C++ vector_fmul_window.
+/// Number of samples in the sine window overlap region.
+const OVERLAP_SIZE: usize = 32;
+/// Half the overlap (used for vector_fmul_window).
+const OVERLAP_HALF: usize = 16;
+
+/// Windowed overlap-add function for smooth block transitions.
 ///
 /// C++ does: dst+=len, win+=len, src0+=len, then loops i=-len..-1, j=len-1..0
 /// After pointer offsets with len=16 and SineWindow[32]:

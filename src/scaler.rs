@@ -115,11 +115,17 @@ impl Scaler {
     }
 }
 
-/// Quantize mantissas with optional energy adjustment.
-/// `input`: scaled values, `first`/`last`: mantissa array range,
-/// `mul`: quantization multiplier, `ea`: enable energy adjustment,
-/// `mantissas`: output array (indexed by first..last).
-/// Returns energy ratio e1/e2.
+/// Quantize scaled spectral coefficients to integer mantissas.
+///
+/// Each input value (in [-1, 1]) is multiplied by `mul` and rounded to the
+/// nearest integer using banker's rounding (`round_ties_even`).
+///
+/// When `ea` (energy adjustment) is enabled, the function tries to minimize
+/// the energy difference between original and quantized signals by nudging
+/// borderline mantissas (values near ±0.5) up or down. This improves
+/// overall energy preservation at the cost of individual coefficient accuracy.
+///
+/// Returns the energy ratio `original_energy / quantized_energy`.
 pub fn quant_mantissas(
     input: &[f32],
     first: usize,
