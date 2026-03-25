@@ -221,7 +221,9 @@ fn calc_bits_allocation(
 
         let ath = ath_long[i] * loudness;
 
-        if !short_block && scaled_blocks[i].max_energy < ath {
+        let threshold = ath;
+
+        if !short_block && scaled_blocks[i].max_energy < threshold {
             bits[i] = 0;
         } else {
             let tmp = spread * (scaled_blocks[i].scale_factor_index as f32 / 3.2)
@@ -375,6 +377,7 @@ pub fn write_frame(
     }
 
     booster.apply_boost(&mut bits_per_block, cur_bits, target_bits);
+
     let frame = write_bitstream(&bits_per_block, scaled_blocks, bfu_idx, block_size);
     (frame, BFU_AMOUNT_TAB[bfu_idx as usize])
 }

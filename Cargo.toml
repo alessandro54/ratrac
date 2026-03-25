@@ -12,6 +12,10 @@ indicatif = "0.17"
 [dev-dependencies]
 criterion = "0.5"
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
 [[bench]]
 name = "codec"
 harness = false

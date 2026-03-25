@@ -55,7 +55,7 @@ impl Atrac1Encoder {
             ],
             scaler: Scaler::new(),
             loudness_curve: create_loudness_curve(NUM_SAMPLES),
-            loudness: LOUD_FACTOR, // C++: Loudness = LoudFactor (initial)
+            loudness: LOUD_FACTOR,
 
             pcm_buf_low: [[0.0; 256 + 16]; 2],
             pcm_buf_mid: [[0.0; 256 + 16]; 2],
@@ -63,13 +63,11 @@ impl Atrac1Encoder {
         }
     }
 
-    /// Encode one channel. Returns (frame_bytes, specs, frame_loudness, window_mask).
     fn encode_channel(
         &mut self,
         pcm: &[f32],
         channel: usize,
     ) -> (Vec<f32>, f32, u32, BlockSizeMod) {
-        // QMF analysis: write directly into pcm_buf (matching C++)
         self.analysis_filter_bank[channel].analysis(
             pcm,
             &mut self.pcm_buf_low[channel][..128],
@@ -77,23 +75,15 @@ impl Atrac1Encoder {
             &mut self.pcm_buf_hi[channel][..256],
         );
 
-        // Transient detection
         let window_mask = match self.settings.window_mode {
             WindowMode::Auto => {
                 let td = &mut self.transient_detectors[channel];
                 let mut mask: u32 = 0;
-
-                // Low band: detect on raw samples
                 mask |= td.low.detect(&self.pcm_buf_low[channel][..128]) as u32;
-
-                // Mid band: C++ inverts spectrum before detection
                 let inv_mid = invert_spectr(&self.pcm_buf_mid[channel][..128]);
                 mask |= (td.mid.detect(&inv_mid) as u32) << 1;
-
-                // Hi band: C++ inverts spectrum before detection
                 let inv_hi = invert_spectr(&self.pcm_buf_hi[channel][..256]);
                 mask |= (td.hi.detect(&inv_hi) as u32) << 2;
-
                 mask
             }
             WindowMode::NoTransient => self.settings.window_mask,
@@ -105,7 +95,6 @@ impl Atrac1Encoder {
             window_mask & 4 != 0,
         );
 
-        // MDCT
         let mut specs = vec![0.0f32; 512];
         self.mdct.mdct(
             &mut specs,
@@ -115,7 +104,6 @@ impl Atrac1Encoder {
             &block_size,
         );
 
-        // Loudness: C++ computes raw (no LOUD_FACTOR here)
         let frame_loudness: f32 = specs
             .iter()
             .zip(self.loudness_curve.iter())
@@ -127,17 +115,14 @@ impl Atrac1Encoder {
 
     /// Encode 512 PCM samples for one channel (mono). Returns a 212-byte frame.
     pub fn encode_frame(&mut self, pcm: &[f32], channel: usize) -> Vec<u8> {
-        let (specs, frame_loudness, window_mask, block_size) = self.encode_channel(pcm, channel);
+        let (specs, frame_loudness, window_mask, block_size) =
+            self.encode_channel(pcm, channel);
 
-        // Mono loudness tracking (C++ path when windowMask == 0)
         if window_mask == 0 {
             self.loudness = track_loudness_mono(self.loudness, frame_loudness);
         }
 
-        // Scale
         let scaled_blocks = self.scaler.scale_frame(&specs, &block_size);
-
-        // Bit allocation: C++ passes Loudness / LoudFactor
         let (frame, _) = write_frame(
             &scaled_blocks,
             &block_size,
@@ -151,12 +136,14 @@ impl Atrac1Encoder {
 
     /// Encode interleaved PCM (512 * num_channels samples).
     /// Returns one 212-byte frame per channel.
-    /// Matches the C++ two-pass approach: first encode all channels, then write all.
-    pub fn encode_frame_interleaved(&mut self, pcm: &[f32], num_channels: usize) -> Vec<Vec<u8>> {
+    pub fn encode_frame_interleaved(
+        &mut self,
+        pcm: &[f32],
+        num_channels: usize,
+    ) -> Vec<Vec<u8>> {
         let mut channel_data: Vec<(Vec<f32>, f32, u32, BlockSizeMod)> =
             Vec::with_capacity(num_channels);
 
-        // Pass 1: QMF analysis, transient detection, MDCT, loudness for each channel
         for ch in 0..num_channels {
             let mut channel_pcm = [0.0f32; NUM_SAMPLES];
             for i in 0..NUM_SAMPLES {
@@ -165,7 +152,6 @@ impl Atrac1Encoder {
             channel_data.push(self.encode_channel(&channel_pcm, ch));
         }
 
-        // Loudness tracking (matching C++ logic exactly)
         let window_masks: Vec<u32> = channel_data.iter().map(|d| d.2).collect();
         if num_channels == 2 && window_masks[0] == 0 && window_masks[1] == 0 {
             self.loudness =
@@ -174,7 +160,6 @@ impl Atrac1Encoder {
             self.loudness = track_loudness_mono(self.loudness, channel_data[0].1);
         }
 
-        // Pass 2: Scale + bit allocation + write for each channel
         let mut frames = Vec::with_capacity(num_channels);
         for ch in 0..num_channels {
             let (ref specs, _, _, ref block_size) = channel_data[ch];
