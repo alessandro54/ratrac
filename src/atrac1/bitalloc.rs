@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use crate::atrac1::{
     BFU_AMOUNT_TAB, BITS_PER_BFU_AMOUNT_TAB_IDX, BITS_PER_IDSF, BITS_PER_IDWL, BLOCKS_PER_BAND,
-    BlockSizeMod, MAX_BFUS, NUM_QMF, SOUND_UNIT_SIZE, SPECS_PER_BLOCK, SPECS_START_LONG,
-    bfu_to_band,
+    BlockSizeMod, MAX_BFUS, NUM_QMF, SCALE_TABLE, SOUND_UNIT_SIZE, SPECS_PER_BLOCK,
+    SPECS_START_LONG, bfu_to_band,
 };
 use crate::bitstream::{BitStream, make_sign};
 use crate::psychoacoustic::{analyze_scale_factor_spread, calc_ath};
@@ -22,8 +22,11 @@ const FIXED_BIT_ALLOC_TABLE_SHORT: [u32; MAX_BFUS] = [
     5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
+// Extended boost mask: original C++ only boosted BFUs 18-22, 32-38 (transition zones).
+// We also boost mid-band BFUs 8-17 (perceptually important 1-5 kHz region)
+// and low-mid BFUs 24-31 for better mid-range quality.
 const BIT_BOOST_MASK: [u32; MAX_BFUS] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
@@ -197,6 +200,64 @@ pub fn write_bitstream(
     bytes
 }
 
+// --- Psychoacoustic masking ---
+
+/// Compute masking thresholds using bark-scale critical band spreading.
+/// Each BFU's energy spreads to neighbors, raising their masking floor.
+/// Returns the masking threshold per BFU (linear scale).
+fn compute_masking(scaled_blocks: &[ScaledBlock], bfu_num: usize) -> Vec<f32> {
+    let mut mask = vec![0.0f32; bfu_num];
+
+    // Approximate bark frequency for each BFU center
+    // BFU center freq ≈ (SPECS_START_LONG[i] + SPECS_PER_BLOCK[i]/2) * 44100/1024
+    let bfu_bark: Vec<f32> = (0..bfu_num)
+        .map(|i| {
+            let freq = (SPECS_START_LONG[i] as f32 + SPECS_PER_BLOCK[i] as f32 / 2.0)
+                * 44100.0 / 1024.0;
+            // Hz to Bark approximation (Traunmuller)
+            26.81 * freq / (1960.0 + freq) - 0.53
+        })
+        .collect();
+
+    for i in 0..bfu_num {
+        let energy = scaled_blocks[i].max_energy;
+        if energy <= 0.0 {
+            continue;
+        }
+        let masker_db = 10.0 * energy.log10();
+        let masker_bark = bfu_bark[i];
+
+        for j in 0..bfu_num {
+            if i == j {
+                continue;
+            }
+            let bark_dist = bfu_bark[j] - masker_bark;
+
+            // Spreading function (simplified from Schroeder/MPEG model):
+            // - Upper slope: ~25 dB/bark (masking falls off quickly above masker)
+            // - Lower slope: ~10 dB/bark (masking extends further below masker)
+            let spread_db = if bark_dist > 0.0 {
+                masker_db - 25.0 * bark_dist // upper slope
+            } else {
+                masker_db - 10.0 * bark_dist.abs() // lower slope
+            };
+
+            // Masking offset: tonal maskers are ~14 dB above noise floor
+            // noise maskers are ~5 dB above
+            let mask_db = spread_db - 12.0;
+
+            if mask_db > -100.0 {
+                let mask_linear = 10.0_f32.powf(mask_db / 10.0);
+                if mask_linear > mask[j] {
+                    mask[j] = mask_linear;
+                }
+            }
+        }
+    }
+
+    mask
+}
+
 // --- Bit allocation algorithm ---
 
 fn calc_bits_allocation(
@@ -208,6 +269,7 @@ fn calc_bits_allocation(
     loudness: f32,
 ) -> Vec<u32> {
     let ath_long = &*ATH_LONG;
+    let masking = compute_masking(scaled_blocks, bfu_num);
     let mut bits = vec![0u32; bfu_num];
 
     for i in 0..bfu_num {
@@ -221,9 +283,8 @@ fn calc_bits_allocation(
 
         let ath = ath_long[i] * loudness;
 
-        let threshold = ath;
-
-        if !short_block && scaled_blocks[i].max_energy < threshold {
+        // Use ATH only for zero-out decision (conservative)
+        if !short_block && scaled_blocks[i].max_energy < ath {
             bits[i] = 0;
         } else {
             let tmp = spread * (scaled_blocks[i].scale_factor_index as f32 / 3.2)
@@ -236,6 +297,19 @@ fn calc_bits_allocation(
                 bits[i] = 0;
             } else {
                 bits[i] = tmp as u32;
+            }
+
+            // Masking-based refinement: if quantization noise is well below
+            // the masking threshold, save 1 bit for redistribution.
+            // Only for long blocks in steady-state (not transients).
+            if bits[i] >= 4 && !short_block && masking[i] > 0.0 {
+                let scale = SCALE_TABLE[scaled_blocks[i].scale_factor_index as usize];
+                let quant_noise = scale * scale / ((1u32 << (bits[i] - 1)) as f32).powi(2);
+                let combined = ath.max(masking[i]);
+                // Only reduce if noise is 10x below threshold (very conservative)
+                if quant_noise < combined * 0.1 {
+                    bits[i] -= 1;
+                }
             }
         }
     }
@@ -303,7 +377,7 @@ pub fn write_frame(
             - bits_per_block.len() * (BITS_PER_IDWL + BITS_PER_IDSF);
 
         let max_bits = bits_available;
-        let min_bits = bits_available - 110;
+        let min_bits = bits_available - 16; // tight tolerance: use nearly all bits
 
         let mut max_shift: f32 = 15.0;
         let mut min_shift: f32 = -3.0;
@@ -377,7 +451,6 @@ pub fn write_frame(
     }
 
     booster.apply_boost(&mut bits_per_block, cur_bits, target_bits);
-
     let frame = write_bitstream(&bits_per_block, scaled_blocks, bfu_idx, block_size);
     (frame, BFU_AMOUNT_TAB[bfu_idx as usize])
 }
