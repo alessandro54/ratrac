@@ -4,9 +4,16 @@ const FIR_LEN: usize = 21;
 /// FIR high-pass filter coefficients (10 values, each pre-multiplied by 2.0).
 /// Symmetric filter: applied to pairs (i, FIR_LEN-i).
 const FIRCOEF: [f32; 10] = [
-    -8.65163e-18 * 2.0, -0.00851586 * 2.0, -6.74764e-18 * 2.0, 0.0209036 * 2.0,
-    -3.36639e-17 * 2.0, -0.0438162 * 2.0, -1.54175e-17 * 2.0, 0.0931738 * 2.0,
-    -5.52212e-17 * 2.0, -0.313819 * 2.0,
+    -8.65163e-18 * 2.0,
+    -0.00851586 * 2.0,
+    -6.74764e-18 * 2.0,
+    0.0209036 * 2.0,
+    -3.36639e-17 * 2.0,
+    -0.0438162 * 2.0,
+    -1.54175e-17 * 2.0,
+    0.0931738 * 2.0,
+    -5.52212e-17 * 2.0,
+    -0.313819 * 2.0,
 ];
 
 fn calculate_rms(data: &[f32]) -> f32 {
@@ -82,7 +89,8 @@ impl TransientDetector {
         let mut trans = false;
         for i in 1..n_blocks_to_analyze {
             let start = (i - 1) * self.short_sz;
-            rms_per_block[i] = 19.0 * calculate_rms(&filtered[start..start + self.short_sz]).log10();
+            rms_per_block[i] =
+                19.0 * calculate_rms(&filtered[start..start + self.short_sz]).log10();
 
             if rms_per_block[i] - rms_per_block[i - 1] > 16.0 {
                 trans = true;

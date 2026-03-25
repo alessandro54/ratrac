@@ -59,7 +59,8 @@ fn test_mdct_32() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MDCT32 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -78,7 +79,8 @@ fn test_mdct_64() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MDCT64 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -97,7 +99,8 @@ fn test_mdct_128() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MDCT128 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -116,7 +119,8 @@ fn test_mdct_256() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MDCT256 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -127,7 +131,9 @@ fn test_mdct_256() {
 fn test_midct_32() {
     let n = 32;
     let mut transform = Midct::new(n, n as f32);
-    let src: Vec<f32> = (0..n).map(|i| if i < n / 2 { i as f32 } else { 0.0 }).collect();
+    let src: Vec<f32> = (0..n)
+        .map(|i| if i < n / 2 { i as f32 } else { 0.0 })
+        .collect();
     let ref_result = naive_midct(&src, n / 2);
     let result = transform.process(&src[..n / 2]);
 
@@ -137,7 +143,8 @@ fn test_midct_32() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MIDCT32 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -156,7 +163,8 @@ fn test_midct_64() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MIDCT64 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -175,7 +183,8 @@ fn test_midct_128() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MIDCT128 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }
@@ -194,7 +203,8 @@ fn test_midct_256() {
         assert!(
             (ref_result[i] - result[i]).abs() <= eps,
             "MIDCT256 mismatch at {i}: ref={} got={} eps={eps}",
-            ref_result[i], result[i]
+            ref_result[i],
+            result[i]
         );
     }
 }

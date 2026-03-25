@@ -8,10 +8,16 @@ const DELAY_COMP: usize = 39;
 /// - mid: 128 samples (5.5 - 11 kHz)
 /// - hi: 256 samples (11 - 22 kHz)
 pub struct Atrac1AnalysisFilterBank {
-    qmf1: Qmf,          // 512 -> 256 + 256
-    qmf2: Qmf,          // 256 -> 128 + 128
-    mid_low_tmp: Vec<f32>,  // 512
-    delay_buf: Vec<f32>,    // DELAY_COMP + 512
+    qmf1: Qmf,             // 512 -> 256 + 256
+    qmf2: Qmf,             // 256 -> 128 + 128
+    mid_low_tmp: Vec<f32>, // 512
+    delay_buf: Vec<f32>,   // DELAY_COMP + 512
+}
+
+impl Default for Atrac1AnalysisFilterBank {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Atrac1AnalysisFilterBank {
@@ -34,7 +40,11 @@ impl Atrac1AnalysisFilterBank {
         self.delay_buf.copy_within(256..256 + DELAY_COMP, 0);
 
         // First QMF: 512 -> mid_low_tmp(256) + delay_buf[39..](256)
-        self.qmf1.analysis(pcm, &mut self.mid_low_tmp[..256], &mut self.delay_buf[DELAY_COMP..DELAY_COMP + 256]);
+        self.qmf1.analysis(
+            pcm,
+            &mut self.mid_low_tmp[..256],
+            &mut self.delay_buf[DELAY_COMP..DELAY_COMP + 256],
+        );
 
         // Second QMF: 256 -> low(128) + mid(128)
         self.qmf2.analysis(&self.mid_low_tmp[..256], low, mid);
@@ -50,6 +60,12 @@ pub struct Atrac1SynthesisFilterBank {
     qmf2: Qmf,
     mid_low_tmp: Vec<f32>,
     delay_buf: Vec<f32>,
+}
+
+impl Default for Atrac1SynthesisFilterBank {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Atrac1SynthesisFilterBank {
@@ -78,7 +94,8 @@ impl Atrac1SynthesisFilterBank {
         self.qmf2.synthesis(&mut self.mid_low_tmp[..256], low, mid);
 
         // First QMF synthesis: mid_low_tmp(256) + delay_buf(256) -> pcm(512)
-        self.qmf1.synthesis(pcm, &self.mid_low_tmp[..256], &self.delay_buf[..256]);
+        self.qmf1
+            .synthesis(pcm, &self.mid_low_tmp[..256], &self.delay_buf[..256]);
     }
 }
 

@@ -28,8 +28,8 @@ fn vector_fmul_window(
         let s0 = src0[src0_offset + i];
         let s1 = src1[src1_offset + j];
         // After win+=len: win[i-len] = win_orig[i], win[j] = win_orig[j+len]
-        let wi = win[i];           // SineWindow[0..15]
-        let wj = win[j + len];     // SineWindow[16..31]
+        let wi = win[i]; // SineWindow[0..15]
+        let wj = win[j + len]; // SineWindow[16..31]
         dst[dst_offset + i] = s0 * wj - s1 * wi;
         dst[dst_offset + j + len] = s0 * wi + s1 * wj;
     }
@@ -44,6 +44,12 @@ pub struct Atrac1Mdct {
     midct512: Midct,
     midct256: Midct,
     midct64: Midct,
+}
+
+impl Default for Atrac1Mdct {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Atrac1Mdct {
@@ -88,22 +94,23 @@ impl Atrac1Mdct {
             } else {
                 0
             };
-            let multiple: f32 = if num_mdct_blocks != 1 && band == 2 { 2.0 } else { 1.0 };
+            let multiple: f32 = if num_mdct_blocks != 1 && band == 2 {
+                2.0
+            } else {
+                1.0
+            };
 
             let mut tmp = vec![0.0f32; 512];
             let mut block_pos: usize = 0;
 
             for _k in 0..num_mdct_blocks {
                 // Copy overlap tail into tmp
-                tmp[win_start..win_start + 32]
-                    .copy_from_slice(&src_buf[buf_sz..buf_sz + 32]);
+                tmp[win_start..win_start + 32].copy_from_slice(&src_buf[buf_sz..buf_sz + 32]);
 
                 // Window and save new overlap
                 for i in 0..32 {
-                    src_buf[buf_sz + i] =
-                        sine_window[i] * src_buf[block_pos + block_sz - 32 + i];
-                    src_buf[block_pos + block_sz - 32 + i] =
-                        sine_window[31 - i] * src_buf[block_pos + block_sz - 32 + i];
+                    src_buf[buf_sz + i] = sine_window[i] * src_buf[block_pos + block_sz - 32 + i];
+                    src_buf[block_pos + block_sz - 32 + i] *= sine_window[31 - i];
                 }
 
                 // Copy current block into tmp
@@ -201,17 +208,29 @@ impl Atrac1Mdct {
                 if prev_is_dst {
                     // prev is in dst_buf at prev_offset
                     // We need to create a temporary copy since dst_buf is being written
-                    let prev_copy: Vec<f32> =
-                        dst_buf[prev_offset..prev_offset + 16].to_vec();
+                    let prev_copy: Vec<f32> = dst_buf[prev_offset..prev_offset + 16].to_vec();
                     vector_fmul_window(
-                        dst_buf, start, &prev_copy, 0, &inv_buf, start, sine_window, 16,
+                        dst_buf,
+                        start,
+                        &prev_copy,
+                        0,
+                        &inv_buf,
+                        start,
+                        sine_window,
+                        16,
                     );
                 } else {
                     // prev is in inv_buf at prev_offset
-                    let prev_copy: Vec<f32> =
-                        inv_buf[prev_offset..prev_offset + 16].to_vec();
+                    let prev_copy: Vec<f32> = inv_buf[prev_offset..prev_offset + 16].to_vec();
                     vector_fmul_window(
-                        dst_buf, start, &prev_copy, 0, &inv_buf, start, sine_window, 16,
+                        dst_buf,
+                        start,
+                        &prev_copy,
+                        0,
+                        &inv_buf,
+                        start,
+                        sine_window,
+                        16,
                     );
                 }
 

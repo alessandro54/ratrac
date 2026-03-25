@@ -42,9 +42,9 @@ fn test_specs_start_long_contiguous() {
 
 #[test]
 fn test_specs_start_long_band_boundaries() {
-    assert_eq!(0, SPECS_START_LONG[0]);      // low starts at 0
-    assert_eq!(128, SPECS_START_LONG[20]);   // mid starts at 128
-    assert_eq!(256, SPECS_START_LONG[36]);   // high starts at 256
+    assert_eq!(0, SPECS_START_LONG[0]); // low starts at 0
+    assert_eq!(128, SPECS_START_LONG[20]); // mid starts at 128
+    assert_eq!(256, SPECS_START_LONG[36]); // high starts at 256
 }
 
 #[test]
@@ -99,7 +99,10 @@ fn test_scale_table_formula() {
 fn test_scale_table_monotonically_increasing() {
     let table = &*SCALE_TABLE;
     for i in 1..64 {
-        assert!(table[i] > table[i - 1], "ScaleTable not monotonic at index {i}");
+        assert!(
+            table[i] > table[i - 1],
+            "ScaleTable not monotonic at index {i}"
+        );
     }
 }
 
@@ -131,7 +134,10 @@ fn test_sine_window_formula() {
 fn test_sine_window_range() {
     let win = &*SINE_WINDOW;
     for (i, &v) in win.iter().enumerate() {
-        assert!(v > 0.0 && v <= 1.0, "SineWindow[{i}] = {v} out of range (0, 1]");
+        assert!(
+            v > 0.0 && v <= 1.0,
+            "SineWindow[{i}] = {v} out of range (0, 1]"
+        );
     }
 }
 

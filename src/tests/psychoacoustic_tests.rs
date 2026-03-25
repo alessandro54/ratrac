@@ -12,21 +12,30 @@ fn test_ath_formula_1khz() {
     // 1 kHz is in the most sensitive range of hearing
     let val = ath_formula_frank(1000.0);
     // Should be around 3.12 dB (tab index ~80: 312 millibel)
-    assert!(val > 2.0 && val < 5.0, "ATH at 1kHz = {val}, expected ~3.12");
+    assert!(
+        val > 2.0 && val < 5.0,
+        "ATH at 1kHz = {val}, expected ~3.12"
+    );
 }
 
 #[test]
 fn test_ath_formula_100hz() {
     let val = ath_formula_frank(100.0);
     // Should be around 26.58 dB (tab[40] = 2658 millibel)
-    assert!(val > 20.0 && val < 30.0, "ATH at 100Hz = {val}, expected ~26.58");
+    assert!(
+        val > 20.0 && val < 30.0,
+        "ATH at 100Hz = {val}, expected ~26.58"
+    );
 }
 
 #[test]
 fn test_ath_formula_10khz() {
     let val = ath_formula_frank(10000.0);
     // Should be around 14.79 dB (tab[120] = 1479 millibel)
-    assert!(val > 10.0 && val < 20.0, "ATH at 10kHz = {val}, expected ~14.79");
+    assert!(
+        val > 10.0 && val < 20.0,
+        "ATH at 10kHz = {val}, expected ~14.79"
+    );
 }
 
 #[test]
@@ -34,7 +43,10 @@ fn test_ath_formula_4khz() {
     // 4 kHz is near the ear canal resonance, most sensitive
     let val = ath_formula_frank(4000.0);
     // tab index ~104: around -513 to -476 millibel → negative dB
-    assert!(val < 0.0, "ATH at 4kHz = {val}, expected negative (most sensitive)");
+    assert!(
+        val < 0.0,
+        "ATH at 4kHz = {val}, expected negative (most sensitive)"
+    );
 }
 
 #[test]
@@ -47,7 +59,10 @@ fn test_ath_formula_clamping() {
     // Above 29853 Hz should clamp
     let val_high = ath_formula_frank(50000.0);
     let val_max = ath_formula_frank(29853.0);
-    assert!((val_high - val_max).abs() < 0.01, "Should clamp to 29853 Hz");
+    assert!(
+        (val_high - val_max).abs() < 0.01,
+        "Should clamp to 29853 Hz"
+    );
 }
 
 #[test]
@@ -83,7 +98,12 @@ fn test_calc_ath_low_bins_higher_than_mid() {
     // Low frequency bins should have higher threshold than mid-range (less sensitive)
     let ath = calc_ath(256, 44100);
     // Bin 0 (~86 Hz) should be higher than bin ~50 (~4 kHz range)
-    assert!(ath[0] > ath[50], "Low freq threshold {} should be > mid freq threshold {}", ath[0], ath[50]);
+    assert!(
+        ath[0] > ath[50],
+        "Low freq threshold {} should be > mid freq threshold {}",
+        ath[0],
+        ath[50]
+    );
 }
 
 // --- Loudness curve ---
@@ -128,7 +148,10 @@ fn test_spread_uniform() {
     // All same scale factors → sigma=0 → spread=0
     let indices = vec![30u8; 20];
     let spread = analyze_scale_factor_spread(&indices);
-    assert!((spread - 0.0).abs() < 1e-6, "Uniform should give 0, got {spread}");
+    assert!(
+        (spread - 0.0).abs() < 1e-6,
+        "Uniform should give 0, got {spread}"
+    );
 }
 
 #[test]
@@ -136,7 +159,10 @@ fn test_spread_varied() {
     // Highly varied scale factors → high spread
     let indices: Vec<u8> = (0..20).map(|i| (i * 3) as u8).collect(); // 0,3,6,...,57
     let spread = analyze_scale_factor_spread(&indices);
-    assert!(spread > 0.5, "Varied factors should give high spread, got {spread}");
+    assert!(
+        spread > 0.5,
+        "Varied factors should give high spread, got {spread}"
+    );
 }
 
 #[test]
@@ -152,7 +178,10 @@ fn test_spread_range() {
     // Any input should return [0, 1]
     let indices: Vec<u8> = (0..52).map(|i| (i % 64) as u8).collect();
     let spread = analyze_scale_factor_spread(&indices);
-    assert!(spread >= 0.0 && spread <= 1.0, "Spread {spread} out of [0,1]");
+    assert!(
+        (0.0..=1.0).contains(&spread),
+        "Spread {spread} out of [0,1]"
+    );
 }
 
 // --- Loudness tracking ---
@@ -172,7 +201,10 @@ fn test_track_loudness_stereo_convergence() {
         loud = track_loudness_stereo(loud, 1.0, 1.0);
     }
     // Should converge to 0.01*(1+1)/0.02 = 1.0
-    assert!((loud - 1.0).abs() < 0.01, "Should converge to 1.0, got {loud}");
+    assert!(
+        (loud - 1.0).abs() < 0.01,
+        "Should converge to 1.0, got {loud}"
+    );
 }
 
 #[test]
@@ -187,5 +219,8 @@ fn test_track_loudness_mono_convergence() {
     for _ in 0..1000 {
         loud = track_loudness_mono(loud, 1.0);
     }
-    assert!((loud - 1.0).abs() < 0.01, "Should converge to 1.0, got {loud}");
+    assert!(
+        (loud - 1.0).abs() < 0.01,
+        "Should converge to 1.0, got {loud}"
+    );
 }

@@ -1,6 +1,6 @@
 use crate::atrac1::{
-    BlockSizeMod, BLOCKS_PER_BAND, MAX_BFUS, NUM_QMF, SCALE_TABLE,
-    SPECS_PER_BLOCK, SPECS_START_LONG, SPECS_START_SHORT,
+    BLOCKS_PER_BAND, BlockSizeMod, MAX_BFUS, NUM_QMF, SCALE_TABLE, SPECS_PER_BLOCK,
+    SPECS_START_LONG, SPECS_START_SHORT,
 };
 use crate::util::to_int;
 
@@ -21,6 +21,12 @@ pub struct Scaler {
     scale_index: Vec<(f32, u8)>,
 }
 
+impl Default for Scaler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scaler {
     pub fn new() -> Self {
         let table = &*SCALE_TABLE;
@@ -36,9 +42,7 @@ impl Scaler {
 
     /// Find the smallest scale factor >= max_abs_spec (lower_bound).
     fn find_scale(&self, max_abs_spec: f32) -> (f32, u8) {
-        let pos = self
-            .scale_index
-            .partition_point(|&(v, _)| v < max_abs_spec);
+        let pos = self.scale_index.partition_point(|&(v, _)| v < max_abs_spec);
         if pos < self.scale_index.len() {
             self.scale_index[pos]
         } else {
@@ -161,9 +165,15 @@ pub fn quant_mantissas(
             let t = input[j] * mul;
             if (mantissas[f].abs() as f32) < t.abs() && (mantissas[f].abs() as f32) < (mul - 1.0) {
                 let mut m = mantissas[f];
-                if m > 0 { m += 1; }
-                if m < 0 { m -= 1; }
-                if m == 0 { m = if t > 0.0 { 1 } else { -1 }; }
+                if m > 0 {
+                    m += 1;
+                }
+                if m < 0 {
+                    m -= 1;
+                }
+                if m == 0 {
+                    m = if t > 0.0 { 1 } else { -1 };
+                }
 
                 let ex = e2 - mantissas[f] as f32 * mantissas[f] as f32 * inv2
                     + m as f32 * m as f32 * inv2;
@@ -180,8 +190,12 @@ pub fn quant_mantissas(
             let t = input[j] * mul;
             if (mantissas[f].abs() as f32) > t.abs() {
                 let mut m = mantissas[f];
-                if m > 0 { m -= 1; }
-                if m < 0 { m += 1; }
+                if m > 0 {
+                    m -= 1;
+                }
+                if m < 0 {
+                    m += 1;
+                }
 
                 let ex = e2 - mantissas[f] as f32 * mantissas[f] as f32 * inv2
                     + m as f32 * m as f32 * inv2;

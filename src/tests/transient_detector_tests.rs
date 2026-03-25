@@ -84,10 +84,7 @@ fn test_hp_filter_dc_rejection() {
     let tail_energy: f32 = output[FIR_LEN..].iter().map(|&x| x * x).sum();
     let tail_len = (128 - FIR_LEN) as f32;
     let rms = (tail_energy / tail_len).sqrt();
-    assert!(
-        rms < 0.01,
-        "HP filter should reject DC, got RMS = {rms}"
-    );
+    assert!(rms < 0.01, "HP filter should reject DC, got RMS = {rms}");
 }
 
 #[test]

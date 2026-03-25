@@ -125,9 +125,9 @@ fn test_make_sign_values() {
     assert_eq!(-7, make_sign(-7i32 as u32 as i32, 4));
 
     // Edge cases
-    assert_eq!(-1, make_sign(0b111 as i32, 3)); // 7 as 3 bits = -1
-    assert_eq!(3, make_sign(3, 3));              // 011 = 3 (positive)
-    assert_eq!(-4, make_sign(0b100 as i32, 3));  // 100 = -4
+    assert_eq!(-1, make_sign(0b111_i32, 3)); // 7 as 3 bits = -1
+    assert_eq!(3, make_sign(3, 3)); // 011 = 3 (positive)
+    assert_eq!(-4, make_sign(0b100_i32, 3)); // 100 = -4
 }
 
 #[test]

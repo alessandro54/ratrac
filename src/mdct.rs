@@ -1,4 +1,4 @@
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{FftPlanner, num_complex::Complex};
 
 /// Compute twiddle factors (interleaved cos, sin) matching C++ CalcSinCos.
 /// Uses f64 for computation, stores as f32.
@@ -134,10 +134,7 @@ impl Midct {
             let c = self.sin_cos[i];
             let s = self.sin_cos[i + 1];
 
-            self.fft_in[i / 2] = Complex::new(
-                -2.0 * (i0 * s + r0 * c),
-                -2.0 * (i0 * c - r0 * s),
-            );
+            self.fft_in[i / 2] = Complex::new(-2.0 * (i0 * s + r0 * c), -2.0 * (i0 * c - r0 * s));
         }
 
         // FFT

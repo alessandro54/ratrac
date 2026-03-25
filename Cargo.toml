@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 rustfft = "6"
-hound = "3"
 clap = { version = "4", features = ["derive"] }
+symphonia = { version = "0.5", features = ["flac", "pcm", "wav", "mp3", "aac", "vorbis", "ogg"] }

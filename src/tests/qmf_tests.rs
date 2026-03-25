@@ -9,7 +9,7 @@ fn test_tap_half_coefficients() {
     }
     // Spot-check first and last
     assert!((TAP_HALF[0] - (-0.00001461907)).abs() < 1e-10);
-    assert!((TAP_HALF[23] - 0.46424159).abs() < 1e-7);
+    assert!((TAP_HALF[23] - 0.464_241_6).abs() < 1e-7);
 }
 
 #[test]
@@ -18,7 +18,8 @@ fn test_qmf_window_symmetry() {
     // Window should be symmetric: window[i] == window[47-i]
     for i in 0..24 {
         assert_eq!(
-            qmf.qmf_window[i], qmf.qmf_window[47 - i],
+            qmf.qmf_window[i],
+            qmf.qmf_window[47 - i],
             "QMF window not symmetric at {i}"
         );
     }
@@ -178,5 +179,8 @@ fn test_analysis_state_carries_between_calls() {
     qmf.analysis(&input2, &mut lower, &mut upper);
 
     let has_nonzero = lower.iter().chain(upper.iter()).any(|&x| x != 0.0);
-    assert!(has_nonzero, "History buffer should cause non-zero output from zeros after non-zero input");
+    assert!(
+        has_nonzero,
+        "History buffer should cause non-zero output from zeros after non-zero input"
+    );
 }

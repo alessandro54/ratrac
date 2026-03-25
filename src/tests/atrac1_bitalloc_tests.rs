@@ -34,11 +34,19 @@ fn test_bits_booster_apply_no_surplus() {
 fn test_bits_booster_apply_with_surplus() {
     let booster = BitsBooster::new();
     let mut bits = vec![4u32; 52];
-    let initial_sum: u32 = bits.iter().zip(SPECS_PER_BLOCK.iter()).map(|(&b, &s)| b * s).sum();
+    let initial_sum: u32 = bits
+        .iter()
+        .zip(SPECS_PER_BLOCK.iter())
+        .map(|(&b, &s)| b * s)
+        .sum();
     let target = initial_sum + 50;
     let remaining = booster.apply_boost(&mut bits, initial_sum, target);
     // Some bits should have been redistributed
-    let new_sum: u32 = bits.iter().zip(SPECS_PER_BLOCK.iter()).map(|(&b, &s)| b * s).sum();
+    let new_sum: u32 = bits
+        .iter()
+        .zip(SPECS_PER_BLOCK.iter())
+        .map(|(&b, &s)| b * s)
+        .sum();
     assert!(new_sum >= initial_sum, "Sum should not decrease");
     assert_eq!(remaining, target - new_sum);
 }
@@ -52,7 +60,11 @@ fn test_write_bitstream_frame_size() {
     let bits_per_block = vec![4u32; 20];
 
     let frame = write_bitstream(&bits_per_block, &scaled_blocks, 0, &block_size);
-    assert_eq!(SOUND_UNIT_SIZE, frame.len(), "Frame must be exactly 212 bytes");
+    assert_eq!(
+        SOUND_UNIT_SIZE,
+        frame.len(),
+        "Frame must be exactly 212 bytes"
+    );
 }
 
 #[test]

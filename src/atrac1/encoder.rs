@@ -1,9 +1,7 @@
 use crate::atrac1::bitalloc::write_frame;
 use crate::atrac1::mdct_impl::Atrac1Mdct;
 use crate::atrac1::qmf::Atrac1AnalysisFilterBank;
-use crate::atrac1::{
-    Atrac1EncodeSettings, BlockSizeMod, WindowMode, NUM_SAMPLES,
-};
+use crate::atrac1::{Atrac1EncodeSettings, BlockSizeMod, NUM_SAMPLES, WindowMode};
 use crate::psychoacoustic::{create_loudness_curve, track_loudness_mono, track_loudness_stereo};
 use crate::scaler::Scaler;
 use crate::transient_detector::TransientDetector;
@@ -129,8 +127,7 @@ impl Atrac1Encoder {
 
     /// Encode 512 PCM samples for one channel (mono). Returns a 212-byte frame.
     pub fn encode_frame(&mut self, pcm: &[f32], channel: usize) -> Vec<u8> {
-        let (specs, frame_loudness, window_mask, block_size) =
-            self.encode_channel(pcm, channel);
+        let (specs, frame_loudness, window_mask, block_size) = self.encode_channel(pcm, channel);
 
         // Mono loudness tracking (C++ path when windowMask == 0)
         if window_mask == 0 {
@@ -155,11 +152,7 @@ impl Atrac1Encoder {
     /// Encode interleaved PCM (512 * num_channels samples).
     /// Returns one 212-byte frame per channel.
     /// Matches the C++ two-pass approach: first encode all channels, then write all.
-    pub fn encode_frame_interleaved(
-        &mut self,
-        pcm: &[f32],
-        num_channels: usize,
-    ) -> Vec<Vec<u8>> {
+    pub fn encode_frame_interleaved(&mut self, pcm: &[f32], num_channels: usize) -> Vec<Vec<u8>> {
         let mut channel_data: Vec<(Vec<f32>, f32, u32, BlockSizeMod)> =
             Vec::with_capacity(num_channels);
 
@@ -175,11 +168,8 @@ impl Atrac1Encoder {
         // Loudness tracking (matching C++ logic exactly)
         let window_masks: Vec<u32> = channel_data.iter().map(|d| d.2).collect();
         if num_channels == 2 && window_masks[0] == 0 && window_masks[1] == 0 {
-            self.loudness = track_loudness_stereo(
-                self.loudness,
-                channel_data[0].1,
-                channel_data[1].1,
-            );
+            self.loudness =
+                track_loudness_stereo(self.loudness, channel_data[0].1, channel_data[1].1);
         } else if window_masks[0] == 0 {
             self.loudness = track_loudness_mono(self.loudness, channel_data[0].1);
         }

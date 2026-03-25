@@ -1,7 +1,7 @@
 use super::*;
-use crate::aea::{AeaWriter, AeaReader, AEA_FRAME_SIZE};
-use crate::atrac1::{Atrac1EncodeSettings, WindowMode, NUM_SAMPLES, SOUND_UNIT_SIZE};
+use crate::aea::{AEA_FRAME_SIZE, AeaReader, AeaWriter};
 use crate::atrac1::decoder::Atrac1Decoder;
+use crate::atrac1::{Atrac1EncodeSettings, NUM_SAMPLES, SOUND_UNIT_SIZE, WindowMode};
 use std::path::PathBuf;
 
 fn temp_path(name: &str) -> PathBuf {
@@ -38,10 +38,12 @@ fn test_encode_frame_size_always_212() {
 
     // Various signals
     let signals: Vec<Vec<f32>> = vec![
-        vec![0.0; NUM_SAMPLES],                                         // silence
-        (0..NUM_SAMPLES).map(|i| (i as f32 * 0.1).sin()).collect(),     // low freq
-        (0..NUM_SAMPLES).map(|i| (i as f32 * 1.5).sin()).collect(),     // high freq
-        (0..NUM_SAMPLES).map(|i| if i < 256 { 0.0 } else { 0.8 }).collect(), // transient
+        vec![0.0; NUM_SAMPLES],                                     // silence
+        (0..NUM_SAMPLES).map(|i| (i as f32 * 0.1).sin()).collect(), // low freq
+        (0..NUM_SAMPLES).map(|i| (i as f32 * 1.5).sin()).collect(), // high freq
+        (0..NUM_SAMPLES)
+            .map(|i| if i < 256 { 0.0 } else { 0.8 })
+            .collect(), // transient
     ];
 
     for (idx, pcm) in signals.iter().enumerate() {
@@ -155,7 +157,7 @@ fn test_encode_interleaved_stereo() {
 
     let mut pcm = vec![0.0f32; NUM_SAMPLES * 2];
     for i in 0..NUM_SAMPLES {
-        pcm[i * 2] = 0.3 * (i as f32 * 0.1).sin();     // L
+        pcm[i * 2] = 0.3 * (i as f32 * 0.1).sin(); // L
         pcm[i * 2 + 1] = 0.3 * (i as f32 * 0.15).sin(); // R
     }
 
@@ -207,7 +209,10 @@ fn test_encode_to_aea_decode_back() {
 
             for (i, &s) in samples.iter().enumerate() {
                 assert!(s.is_finite(), "Frame {f} sample {i} not finite");
-                assert!(s >= -1.0 && s <= 1.0, "Frame {f} sample {i} = {s} out of range");
+                assert!(
+                    (-1.0..=1.0).contains(&s),
+                    "Frame {f} sample {i} = {s} out of range"
+                );
             }
         }
     }

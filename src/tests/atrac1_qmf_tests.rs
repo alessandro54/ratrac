@@ -131,7 +131,10 @@ fn test_delay_compensation() {
     // contains the tail of the previous frame's QMF output)
     // Just verify they're different from hi1
     let differ = hi1.iter().zip(hi2.iter()).any(|(&a, &b)| a != b);
-    assert!(differ, "Consecutive frames should produce different high band output");
+    assert!(
+        differ,
+        "Consecutive frames should produce different high band output"
+    );
 }
 
 #[test]

@@ -1,9 +1,9 @@
 use super::*;
-use crate::aea::{AeaWriter, AeaReader, AEA_FRAME_SIZE};
-use crate::atrac1::{BlockSizeMod, NUM_SAMPLES};
-use crate::atrac1::bitalloc::{write_bitstream, write_frame};
-use crate::scaler::{Scaler, ScaledBlock};
+use crate::aea::{AEA_FRAME_SIZE, AeaReader, AeaWriter};
 use crate::atrac1::SPECS_PER_BLOCK;
+use crate::atrac1::bitalloc::{write_bitstream, write_frame};
+use crate::atrac1::{BlockSizeMod, NUM_SAMPLES};
+use crate::scaler::{ScaledBlock, Scaler};
 use std::path::PathBuf;
 
 fn temp_path(name: &str) -> PathBuf {
@@ -76,7 +76,7 @@ fn test_decode_frame_clipping() {
 
     for (i, &s) in samples.iter().enumerate() {
         assert!(
-            s >= -1.0 && s <= 1.0,
+            (-1.0..=1.0).contains(&s),
             "Sample {i} = {s} should be clipped to [-1, 1]"
         );
     }
@@ -119,10 +119,7 @@ fn test_decode_multiple_frames_stability() {
     for f in 0..50 {
         let samples = decoder.decode_frame(&frame, 0);
         for (i, &s) in samples.iter().enumerate() {
-            assert!(
-                s.is_finite(),
-                "Frame {f}, sample {i} is not finite: {s}"
-            );
+            assert!(s.is_finite(), "Frame {f}, sample {i} is not finite: {s}");
         }
     }
 }
@@ -148,7 +145,10 @@ fn test_encode_decode_roundtrip_spectrum() {
 
     // Verify we get non-trivial output
     let has_nonzero = samples.iter().any(|&s| s.abs() > 1e-6);
-    assert!(has_nonzero, "Decoded samples should be non-zero for non-zero spectrum");
+    assert!(
+        has_nonzero,
+        "Decoded samples should be non-zero for non-zero spectrum"
+    );
 
     // All finite
     for (i, &s) in samples.iter().enumerate() {

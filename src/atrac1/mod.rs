@@ -12,25 +12,23 @@ pub const BITS_PER_IDSF: usize = 6;
 
 pub const SPECS_PER_BLOCK: [u32; MAX_BFUS] = [
     // low band (20 BFUs)
-    8, 8, 8, 8, 4, 4, 4, 4, 8, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6,
-    // mid band (16 BFUs)
-    6, 6, 6, 6, 7, 7, 7, 7, 9, 9, 9, 9, 10, 10, 10, 10,
-    // high band (16 BFUs)
+    8, 8, 8, 8, 4, 4, 4, 4, 8, 8, 8, 8, 6, 6, 6, 6, 6, 6, 6, 6, // mid band (16 BFUs)
+    6, 6, 6, 6, 7, 7, 7, 7, 9, 9, 9, 9, 10, 10, 10, 10, // high band (16 BFUs)
     12, 12, 12, 12, 12, 12, 12, 12, 20, 20, 20, 20, 20, 20, 20, 20,
 ];
 
 pub const BLOCKS_PER_BAND: [u32; NUM_QMF + 1] = [0, 20, 36, 52];
 
 pub const SPECS_START_LONG: [u32; MAX_BFUS] = [
-    0, 8, 16, 24, 32, 36, 40, 44, 48, 56, 64, 72, 80, 86, 92, 98, 104, 110, 116, 122,
-    128, 134, 140, 146, 152, 159, 166, 173, 180, 189, 198, 207, 216, 226, 236, 246,
-    256, 268, 280, 292, 304, 316, 328, 340, 352, 372, 392, 412, 432, 452, 472, 492,
+    0, 8, 16, 24, 32, 36, 40, 44, 48, 56, 64, 72, 80, 86, 92, 98, 104, 110, 116, 122, 128, 134,
+    140, 146, 152, 159, 166, 173, 180, 189, 198, 207, 216, 226, 236, 246, 256, 268, 280, 292, 304,
+    316, 328, 340, 352, 372, 392, 412, 432, 452, 472, 492,
 ];
 
 pub const SPECS_START_SHORT: [u32; MAX_BFUS] = [
-    0, 32, 64, 96, 8, 40, 72, 104, 12, 44, 76, 108, 20, 52, 84, 116, 26, 58, 90, 122,
-    128, 160, 192, 224, 134, 166, 198, 230, 141, 173, 205, 237, 150, 182, 214, 246,
-    256, 288, 320, 352, 384, 416, 448, 480, 268, 300, 332, 364, 396, 428, 460, 492,
+    0, 32, 64, 96, 8, 40, 72, 104, 12, 44, 76, 108, 20, 52, 84, 116, 26, 58, 90, 122, 128, 160,
+    192, 224, 134, 166, 198, 230, 141, 173, 205, 237, 150, 182, 214, 246, 256, 288, 320, 352, 384,
+    416, 448, 480, 268, 300, 332, 364, 396, 428, 460, 492,
 ];
 
 pub const BFU_AMOUNT_TAB: [u32; 8] = [20, 28, 32, 36, 40, 44, 48, 52];
@@ -73,7 +71,9 @@ pub struct BlockSizeMod {
 
 impl BlockSizeMod {
     pub fn new() -> Self {
-        Self { log_count: [0, 0, 0] }
+        Self {
+            log_count: [0, 0, 0],
+        }
     }
 
     /// Parse from bitstream: reads 8 bits (2 per band + 2 unused).
@@ -83,7 +83,9 @@ impl BlockSizeMod {
         let mid = 2 - stream.read(2) as i32;
         let hi = 3 - stream.read(2) as i32;
         stream.read(2); // skip unused 2 bits
-        Self { log_count: [low, mid, hi] }
+        Self {
+            log_count: [low, mid, hi],
+        }
     }
 
     /// Create from boolean flags (true = short window).
@@ -130,12 +132,12 @@ impl Default for Atrac1EncodeSettings {
     }
 }
 
-pub mod qmf;
-pub mod dequantiser;
 pub mod bitalloc;
-pub mod mdct_impl;
 pub mod decoder;
+pub mod dequantiser;
 pub mod encoder;
+pub mod mdct_impl;
+pub mod qmf;
 
 #[cfg(test)]
 #[path = "../tests/atrac1_tests.rs"]

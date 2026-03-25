@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use hound::{WavReader, WavSpec, WavWriter};
 
-use ratrac::aea::{AeaReader, AeaWriter, AEA_FRAME_SIZE};
+use ratrac::aea::{AEA_FRAME_SIZE, AeaReader, AeaWriter};
 use ratrac::atrac1::decoder::Atrac1Decoder;
 use ratrac::atrac1::encoder::Atrac1Encoder;
-use ratrac::atrac1::{Atrac1EncodeSettings, WindowMode, NUM_SAMPLES};
+use ratrac::atrac1::{Atrac1EncodeSettings, NUM_SAMPLES, WindowMode};
+use ratrac::audio_input::read_audio;
+use ratrac::wav_output::WavWriter;
 
 #[derive(Parser)]
 #[command(name = "ratrac", about = "ATRAC1 encoder/decoder in Rust")]
@@ -17,9 +18,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Encode a WAV file to ATRAC1 (.aea)
+    /// Encode an audio file to ATRAC1 (.aea)
+    /// Supports: WAV, FLAC, MP3, AAC, OGG/Vorbis
     Encode {
-        /// Input WAV file
+        /// Input audio file
         #[arg(short, long)]
         input: PathBuf,
 
@@ -58,40 +60,29 @@ fn encode(
     bfu_idx_fast: bool,
     notransient: Option<Option<u32>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Open WAV
-    let reader = WavReader::open(input)?;
-    let spec = reader.spec();
+    // Read audio using symphonia (supports WAV, FLAC, MP3, AAC, OGG)
+    let audio = read_audio(input)?;
 
-    if spec.sample_rate != 44100 {
-        return Err(format!("Unsupported sample rate: {} (must be 44100)", spec.sample_rate).into());
+    if audio.sample_rate != 44100 {
+        return Err(format!(
+            "Unsupported sample rate: {} (must be 44100)",
+            audio.sample_rate
+        )
+        .into());
     }
 
-    let num_channels = spec.channels as usize;
-    let total_samples = reader.len() as u64 / num_channels as u64;
+    let num_channels = audio.channels;
+    let total_samples = audio.num_frames();
 
     eprintln!(
         "Input: {} ({} ch, {} Hz, {} samples)",
         input.display(),
         num_channels,
-        spec.sample_rate,
+        audio.sample_rate,
         total_samples,
     );
 
-    // Read all PCM samples as f32
-    let samples: Vec<f32> = match spec.sample_format {
-        hound::SampleFormat::Int => {
-            let bits = spec.bits_per_sample;
-            let max_val = (1u32 << (bits - 1)) as f32;
-            reader
-                .into_samples::<i32>()
-                .map(|s| s.unwrap() as f32 / max_val)
-                .collect()
-        }
-        hound::SampleFormat::Float => reader
-            .into_samples::<f32>()
-            .map(|s| s.unwrap())
-            .collect(),
-    };
+    let samples = audio.samples;
 
     // Encoder settings
     let (window_mode, window_mask) = match notransient {
@@ -118,7 +109,7 @@ fn encode(
     let mut encoder = Atrac1Encoder::new(settings);
 
     // Calculate frames
-    let num_frames = (total_samples + NUM_SAMPLES as u64 - 1) / NUM_SAMPLES as u64;
+    let num_frames = total_samples.div_ceil(NUM_SAMPLES as u64);
 
     // Create AEA output
     let mut writer = AeaWriter::create(
@@ -143,13 +134,11 @@ fn encode(
     let mut frame_count = 0u64;
 
     while pos < samples.len() {
-        // Get one frame of interleaved PCM, zero-pad if needed
         let mut pcm_frame = vec![0.0f32; frame_size];
         let remaining = samples.len() - pos;
         let copy_len = remaining.min(frame_size);
         pcm_frame[..copy_len].copy_from_slice(&samples[pos..pos + copy_len]);
 
-        // Encode
         let frames = encoder.encode_frame_interleaved(&pcm_frame, num_channels);
         for frame in &frames {
             writer.write_frame(frame)?;
@@ -160,17 +149,16 @@ fn encode(
 
         if frame_count % 100 == 0 {
             let pct = (frame_count * 100) / num_frames;
-            eprint!("\r  {}% done", pct);
+            eprint!("\r  {pct}% done");
         }
     }
 
     writer.flush()?;
-    eprintln!("\rDone ({} frames encoded)", frame_count);
+    eprintln!("\rDone ({frame_count} frames encoded)");
     Ok(())
 }
 
 fn decode(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    // Open AEA
     let mut reader = AeaReader::open(input)?;
     let num_channels = reader.channel_num();
     let total_samples = reader.length_in_samples();
@@ -183,18 +171,10 @@ fn decode(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::E
         total_samples,
     );
 
-    // Create WAV output
-    let spec = WavSpec {
-        channels: num_channels as u16,
-        sample_rate: 44100,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut wav_writer = WavWriter::create(output, spec)?;
+    let mut wav_writer = WavWriter::create(output, num_channels as u16, 44100)?;
 
     let mut decoder = Atrac1Decoder::new();
 
-    // Skip dummy frame
     reader.read_frame()?;
 
     eprintln!("Output: {} (WAV, 16-bit)", output.display());
@@ -210,17 +190,12 @@ fn decode(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::E
         let result = decoder.decode_frame_interleaved(&mut reader);
         match result {
             Some(samples) => {
-                for &s in &samples {
-                    // Convert f32 [-1, 1] to i16
-                    let clamped = s.clamp(-1.0, 1.0);
-                    let sample_i16 = (clamped * 32767.0) as i16;
-                    wav_writer.write_sample(sample_i16)?;
-                }
+                wav_writer.write_samples(&samples)?;
                 frame_count += 1;
 
                 if frame_count % 100 == 0 {
                     let pct = (frame_count * 100).min(total_frames * 100) / total_frames.max(1);
-                    eprint!("\r  {}% done", pct);
+                    eprint!("\r  {pct}% done");
                 }
             }
             None => break,
@@ -228,7 +203,7 @@ fn decode(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::E
     }
 
     wav_writer.finalize()?;
-    eprintln!("\rDone ({} frames decoded)", frame_count);
+    eprintln!("\rDone ({frame_count} frames decoded)");
     Ok(())
 }
 

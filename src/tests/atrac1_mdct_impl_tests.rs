@@ -67,7 +67,13 @@ fn test_atrac1_mdct_long_enc_dec() {
     let block_size = BlockSizeMod::from_flags(false, false, false);
 
     mdct.mdct(&mut specs, &mut low, &mut mid, &mut hi, &block_size);
-    mdct.imdct(&mut specs, &block_size, &mut low_res, &mut mid_res, &mut hi_res);
+    mdct.imdct(
+        &mut specs,
+        &block_size,
+        &mut low_res,
+        &mut mid_res,
+        &mut hi_res,
+    );
 
     check_result_128(&low[..256], &low_res);
     check_result_128(&mid[..256], &mid_res);
@@ -103,7 +109,13 @@ fn test_atrac1_mdct_short_enc_dec() {
     let block_size = BlockSizeMod::from_flags(true, true, true);
 
     mdct.mdct(&mut specs, &mut low, &mut mid, &mut hi, &block_size);
-    mdct.imdct(&mut specs, &block_size, &mut low_res, &mut mid_res, &mut hi_res);
+    mdct.imdct(
+        &mut specs,
+        &block_size,
+        &mut low_res,
+        &mut mid_res,
+        &mut hi_res,
+    );
 
     check_result_128(&low_copy[..256], &low_res);
     check_result_128(&mid_copy[..256], &mid_res);
@@ -124,7 +136,10 @@ fn test_atrac1_mdct_zeros() {
     mdct.mdct(&mut specs, &mut low, &mut mid, &mut hi, &block_size);
 
     for (i, &v) in specs.iter().enumerate() {
-        assert!(v.abs() < 1e-10, "specs[{i}] should be ~0 for zero input, got {v}");
+        assert!(
+            v.abs() < 1e-10,
+            "specs[{i}] should be ~0 for zero input, got {v}"
+        );
     }
 }
 

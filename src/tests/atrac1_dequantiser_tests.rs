@@ -1,6 +1,6 @@
 use super::*;
+use crate::atrac1::{BFU_AMOUNT_TAB, BlockSizeMod, SPECS_PER_BLOCK};
 use crate::bitstream::BitStream;
-use crate::atrac1::{BlockSizeMod, BFU_AMOUNT_TAB, SPECS_PER_BLOCK};
 
 /// Helper: build a minimal bitstream for a frame with given BFU count,
 /// word lengths, scale factors, and all-zero mantissas.
@@ -108,11 +108,15 @@ fn test_dequant_nonzero_mantissa() {
     let mut bs = BitStream::new();
 
     // Block size: all long
-    bs.write(2, 2); bs.write(2, 2); bs.write(3, 2); bs.write(0, 2);
+    bs.write(2, 2);
+    bs.write(2, 2);
+    bs.write(3, 2);
+    bs.write(0, 2);
 
     // BFU amount index = 0 → 20 BFUs
     bs.write(0, 3);
-    bs.write(0, 2); bs.write(0, 3); // reserved
+    bs.write(0, 2);
+    bs.write(0, 3); // reserved
 
     // Set word length = 2 for BFU 0, rest = 0
     // wl=2 → actual_wl = 3, maxQuant = 1/(2^2 - 1) = 1/3
@@ -149,14 +153,16 @@ fn test_dequant_nonzero_mantissa() {
     let expected_0 = 1.0 * (1.0 / 3.0) * 1.0;
     assert!(
         (specs[0] - expected_0).abs() < 1e-6,
-        "specs[0] = {}, expected {expected_0}", specs[0]
+        "specs[0] = {}, expected {expected_0}",
+        specs[0]
     );
 
     // specs[1] = 1.0 * (1/3) * MakeSign(5, 3) = (1/3) * (-3) = -1.0
     let expected_1 = 1.0 * (1.0 / 3.0) * (-3.0);
     assert!(
         (specs[1] - expected_1).abs() < 1e-6,
-        "specs[1] = {}, expected {expected_1}", specs[1]
+        "specs[1] = {}, expected {expected_1}",
+        specs[1]
     );
 
     // specs[2..8] should be 0 (mantissa = 0 → MakeSign(0,3) = 0)
@@ -178,9 +184,14 @@ fn test_dequant_short_window() {
 
     // BFU amount = 0 → 20 BFUs, all wl=0
     bs.write(0, 3);
-    bs.write(0, 2); bs.write(0, 3);
-    for _ in 0..20 { bs.write(0, 4); }
-    for _ in 0..20 { bs.write(0, 6); }
+    bs.write(0, 2);
+    bs.write(0, 3);
+    for _ in 0..20 {
+        bs.write(0, 4);
+    }
+    for _ in 0..20 {
+        bs.write(0, 6);
+    }
 
     bs.reset_read_pos();
     bs.read(8); // skip block size
@@ -201,18 +212,29 @@ fn test_dequant_scale_factor_effect() {
 
     let make_frame = |sf: u32| -> [f32; 512] {
         let mut bs = BitStream::new();
-        bs.write(2, 2); bs.write(2, 2); bs.write(3, 2); bs.write(0, 2);
-        bs.write(0, 3); bs.write(0, 2); bs.write(0, 3);
+        bs.write(2, 2);
+        bs.write(2, 2);
+        bs.write(3, 2);
+        bs.write(0, 2);
+        bs.write(0, 3);
+        bs.write(0, 2);
+        bs.write(0, 3);
 
         // BFU 0: wl=1 → actual_wl=2, maxQuant=1/1=1
         bs.write(1, 4);
-        for _ in 1..20 { bs.write(0, 4); }
+        for _ in 1..20 {
+            bs.write(0, 4);
+        }
 
         bs.write(sf, 6);
-        for _ in 1..20 { bs.write(0, 6); }
+        for _ in 1..20 {
+            bs.write(0, 6);
+        }
 
         // 8 mantissas of 2 bits each, all = 1
-        for _ in 0..8 { bs.write(1, 2); }
+        for _ in 0..8 {
+            bs.write(1, 2);
+        }
 
         bs.reset_read_pos();
         bs.read(8);
@@ -229,6 +251,7 @@ fn test_dequant_scale_factor_effect() {
     assert!(
         specs_high_sf[0].abs() > specs_low_sf[0].abs(),
         "Higher SF should produce larger values: {} vs {}",
-        specs_high_sf[0], specs_low_sf[0]
+        specs_high_sf[0],
+        specs_low_sf[0]
     );
 }

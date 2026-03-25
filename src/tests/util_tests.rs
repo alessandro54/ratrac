@@ -139,17 +139,17 @@ fn test_to_int_rounds_up_normally() {
 #[test]
 fn test_to_int_bankers_rounding_half_values() {
     // Banker's rounding: half values round to nearest EVEN
-    assert_eq!(0, to_int(0.5));    // 0.5 -> 0 (even)
-    assert_eq!(2, to_int(1.5));    // 1.5 -> 2 (even)
-    assert_eq!(2, to_int(2.5));    // 2.5 -> 2 (even)
-    assert_eq!(4, to_int(3.5));    // 3.5 -> 4 (even)
-    assert_eq!(4, to_int(4.5));    // 4.5 -> 4 (even)
+    assert_eq!(0, to_int(0.5)); // 0.5 -> 0 (even)
+    assert_eq!(2, to_int(1.5)); // 1.5 -> 2 (even)
+    assert_eq!(2, to_int(2.5)); // 2.5 -> 2 (even)
+    assert_eq!(4, to_int(3.5)); // 3.5 -> 4 (even)
+    assert_eq!(4, to_int(4.5)); // 4.5 -> 4 (even)
 
     // Negative half values
-    assert_eq!(0, to_int(-0.5));   // -0.5 -> 0 (even)
-    assert_eq!(-2, to_int(-1.5));  // -1.5 -> -2 (even)
-    assert_eq!(-2, to_int(-2.5));  // -2.5 -> -2 (even)
-    assert_eq!(-4, to_int(-3.5));  // -3.5 -> -4 (even)
+    assert_eq!(0, to_int(-0.5)); // -0.5 -> 0 (even)
+    assert_eq!(-2, to_int(-1.5)); // -1.5 -> -2 (even)
+    assert_eq!(-2, to_int(-2.5)); // -2.5 -> -2 (even)
+    assert_eq!(-4, to_int(-3.5)); // -3.5 -> -4 (even)
 }
 
 #[test]

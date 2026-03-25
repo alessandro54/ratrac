@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::bitstream::{make_sign, BitStream};
 use crate::atrac1::{
-    BlockSizeMod, BFU_AMOUNT_TAB, BITS_PER_BFU_AMOUNT_TAB_IDX, BITS_PER_IDSF,
-    BITS_PER_IDWL, MAX_BFUS, NUM_QMF, BLOCKS_PER_BAND,
-    SOUND_UNIT_SIZE, SPECS_PER_BLOCK, SPECS_START_LONG, bfu_to_band,
+    BFU_AMOUNT_TAB, BITS_PER_BFU_AMOUNT_TAB_IDX, BITS_PER_IDSF, BITS_PER_IDWL, BLOCKS_PER_BAND,
+    BlockSizeMod, MAX_BFUS, NUM_QMF, SOUND_UNIT_SIZE, SPECS_PER_BLOCK, SPECS_START_LONG,
+    bfu_to_band,
 };
+use crate::bitstream::{BitStream, make_sign};
 use crate::psychoacoustic::{analyze_scale_factor_spread, calc_ath};
 use crate::scaler::ScaledBlock;
 use crate::util::to_int;
@@ -13,21 +13,18 @@ use crate::util::to_int;
 // --- Static tables ---
 
 const FIXED_BIT_ALLOC_TABLE_LONG: [u32; MAX_BFUS] = [
-    7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-    6, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 4,
-    4, 4, 3, 3, 3, 3, 3, 3, 2, 1, 1, 1, 1, 0, 0, 0,
+    7, 7, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    5, 5, 5, 4, 4, 4, 3, 3, 3, 3, 3, 3, 2, 1, 1, 1, 1, 0, 0, 0,
 ];
 
 const FIXED_BIT_ALLOC_TABLE_SHORT: [u32; MAX_BFUS] = [
-    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-    6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-    4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 5, 5, 5,
+    5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 const BIT_BOOST_MASK: [u32; MAX_BFUS] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-    1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-    1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 // --- BitsBooster ---
@@ -38,6 +35,12 @@ pub struct BitsBooster {
     bits_boost_map: BTreeMap<u32, Vec<u32>>,
     max_bits_per_iteration: u32,
     min_key: u32,
+}
+
+impl Default for BitsBooster {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BitsBooster {
@@ -61,12 +64,7 @@ impl BitsBooster {
 
     /// Apply boost: distribute surplus bits from `cur` up to `target`.
     /// Returns remaining surplus.
-    pub fn apply_boost(
-        &self,
-        bits_per_block: &mut Vec<u32>,
-        cur: u32,
-        target: u32,
-    ) -> u32 {
+    pub fn apply_boost(&self, bits_per_block: &mut Vec<u32>, cur: u32, target: u32) -> u32 {
         let mut surplus = target - cur;
         let key = surplus.min(self.max_bits_per_iteration);
 
@@ -90,7 +88,11 @@ impl BitsBooster {
                 if bits_per_block[cur_pos as usize] == 16 {
                     continue;
                 }
-                let n_bits_per_spec = if bits_per_block[cur_pos as usize] != 0 { 1 } else { 2 };
+                let n_bits_per_spec = if bits_per_block[cur_pos as usize] != 0 {
+                    1
+                } else {
+                    2
+                };
                 if bits_per_block[cur_pos as usize] == 0 && cur_bits * 2 > surplus {
                     continue;
                 }
@@ -250,8 +252,7 @@ fn get_max_used_bfu_id(bits_per_block: &[u32]) -> u32 {
             let mut bfu_num = bfu_num;
             while idx > 0 && bits_per_block[bfu_num - 1 - i] == 0 {
                 i += 1;
-                if i >= (BFU_AMOUNT_TAB[idx as usize] - BFU_AMOUNT_TAB[idx as usize - 1]) as usize
-                {
+                if i >= (BFU_AMOUNT_TAB[idx as usize] - BFU_AMOUNT_TAB[idx as usize - 1]) as usize {
                     idx -= 1;
                     bfu_num -= i;
                     i = 0;

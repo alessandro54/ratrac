@@ -1,7 +1,7 @@
 use crate::aea::AeaReader;
-use crate::atrac1::qmf::Atrac1SynthesisFilterBank;
 use crate::atrac1::dequantiser::dequant;
 use crate::atrac1::mdct_impl::Atrac1Mdct;
+use crate::atrac1::qmf::Atrac1SynthesisFilterBank;
 use crate::atrac1::{BlockSizeMod, NUM_SAMPLES};
 use crate::bitstream::BitStream;
 
@@ -16,6 +16,12 @@ pub struct Atrac1Decoder {
     pcm_buf_hi: [[f32; 512 + 16]; 2],
     pcm_value_max: f32,
     pcm_value_min: f32,
+}
+
+impl Default for Atrac1Decoder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Atrac1Decoder {
@@ -80,10 +86,7 @@ impl Atrac1Decoder {
     /// Decode one frame from a multi-channel AEA stream.
     /// Returns interleaved PCM: [ch0_s0, ch1_s0, ch0_s1, ch1_s1, ...]
     /// or mono: [s0, s1, s2, ...]
-    pub fn decode_frame_interleaved(
-        &mut self,
-        reader: &mut AeaReader,
-    ) -> Option<Vec<f32>> {
+    pub fn decode_frame_interleaved(&mut self, reader: &mut AeaReader) -> Option<Vec<f32>> {
         let num_channels = reader.channel_num();
         let mut output = vec![0.0f32; NUM_SAMPLES * num_channels];
 

@@ -1,8 +1,8 @@
-use crate::bitstream::{make_sign, BitStream};
 use crate::atrac1::{
-    BlockSizeMod, BFU_AMOUNT_TAB, BLOCKS_PER_BAND, MAX_BFUS, NUM_QMF,
-    SCALE_TABLE, SPECS_PER_BLOCK, SPECS_START_LONG, SPECS_START_SHORT,
+    BFU_AMOUNT_TAB, BLOCKS_PER_BAND, BlockSizeMod, MAX_BFUS, NUM_QMF, SCALE_TABLE, SPECS_PER_BLOCK,
+    SPECS_START_LONG, SPECS_START_SHORT,
 };
+use crate::bitstream::{BitStream, make_sign};
 
 /// Dequantise an ATRAC1 frame from a bitstream into 512 spectral coefficients.
 ///
