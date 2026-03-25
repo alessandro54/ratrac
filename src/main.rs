@@ -7,7 +7,7 @@ use ratrac::aea::{AEA_FRAME_SIZE, AeaReader, AeaWriter};
 use ratrac::atrac1::decoder::Atrac1Decoder;
 use ratrac::atrac1::encoder::Atrac1Encoder;
 use ratrac::atrac1::{Atrac1EncodeSettings, NUM_SAMPLES, WindowMode};
-use ratrac::audio_input::read_audio;
+use ratrac::audio_input::{AudioReader, FrameReader};
 use ratrac::wav_output::WavWriter;
 
 #[derive(Parser)]
@@ -84,29 +84,38 @@ fn encode(
     bfu_idx_fast: bool,
     notransient: Option<Option<u32>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let audio = read_audio(input)?;
+    // Open audio stream (no full file load)
+    let reader = AudioReader::open(input)?;
 
-    if audio.sample_rate != 44100 {
+    if reader.info.sample_rate != 44100 {
         return Err(format!(
             "Unsupported sample rate: {} (must be 44100)",
-            audio.sample_rate
+            reader.info.sample_rate
         )
         .into());
     }
 
-    let num_channels = audio.channels;
-    let total_samples = audio.num_frames();
-    let duration_secs = total_samples as f64 / 44100.0;
+    let num_channels = reader.info.channels;
+    let total_frames = reader
+        .info
+        .total_frames
+        .map(|f| f.div_ceil(NUM_SAMPLES as u64));
+
+    let duration = reader
+        .info
+        .total_frames
+        .map(|f| format_duration(f as f64 / 44100.0));
 
     eprintln!(
-        "  Input:  {} ({} ch, {} Hz, {})",
+        "  Input:  {} ({} ch, {} Hz{})",
         input.display(),
         num_channels,
-        audio.sample_rate,
-        format_duration(duration_secs),
+        reader.info.sample_rate,
+        duration
+            .as_ref()
+            .map(|d| format!(", {d}"))
+            .unwrap_or_default(),
     );
-
-    let samples = audio.samples;
 
     let (window_mode, window_mask) = match notransient {
         Some(mask_opt) => {
@@ -130,50 +139,48 @@ fn encode(
     };
 
     let mut encoder = Atrac1Encoder::new(settings);
-    let num_frames = total_samples.div_ceil(NUM_SAMPLES as u64);
 
+    // We don't know exact frame count upfront for all formats,
+    // so use estimate or 0 for AEA header (gets written once)
+    let est_frames = total_frames.unwrap_or(0);
     let mut writer = AeaWriter::create(
         output,
         "ratrac",
         num_channels,
-        (num_frames * num_channels as u64) as u32,
+        (est_frames * num_channels as u64) as u32,
     )?;
     writer.write_frame(&[0; AEA_FRAME_SIZE])?;
 
-    let input_size = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
-    let output_size_est = 2048 + num_frames * 212 * num_channels as u64;
-    let ratio = input_size as f64 / output_size_est as f64;
+    eprintln!("  Output: {} (ATRAC1)", output.display());
 
-    eprintln!(
-        "  Output: {} (ATRAC1, {} frames, ~{:.1}x compression)",
-        output.display(),
-        num_frames,
-        ratio,
-    );
+    // Progress bar: if we know total, show determinate; otherwise spinner
+    let pb = if let Some(total) = total_frames {
+        make_progress_bar(total, "Encoding")
+    } else {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::with_template("Encoding {spinner} {pos} frames [{elapsed_precise}]")
+                .unwrap(),
+        );
+        pb
+    };
 
-    let pb = make_progress_bar(num_frames, "Encoding");
+    // Stream frames
+    let mut frame_reader = FrameReader::new(reader, NUM_SAMPLES);
+    let mut frame_count = 0u64;
 
-    let frame_size = NUM_SAMPLES * num_channels;
-    let mut pos = 0;
-
-    while pos < samples.len() {
-        let mut pcm_frame = vec![0.0f32; frame_size];
-        let remaining = samples.len() - pos;
-        let copy_len = remaining.min(frame_size);
-        pcm_frame[..copy_len].copy_from_slice(&samples[pos..pos + copy_len]);
-
+    while let Some(pcm_frame) = frame_reader.next_frame()? {
         let frames = encoder.encode_frame_interleaved(&pcm_frame, num_channels);
         for frame in &frames {
             writer.write_frame(frame)?;
         }
-
-        pos += frame_size;
+        frame_count += 1;
         pb.inc(1);
     }
 
     writer.flush()?;
     pb.finish_and_clear();
-    eprintln!("  Done.");
+    eprintln!("  Done ({frame_count} frames encoded).");
     Ok(())
 }
 

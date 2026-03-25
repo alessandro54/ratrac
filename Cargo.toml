@@ -8,3 +8,10 @@ rustfft = "6"
 clap = { version = "4", features = ["derive"] }
 symphonia = { version = "0.5", features = ["flac", "pcm", "wav", "mp3", "aac", "vorbis", "ogg"] }
 indicatif = "0.17"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "codec"
+harness = false
