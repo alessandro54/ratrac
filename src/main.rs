@@ -6,7 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use ratrac::aea::{AEA_FRAME_SIZE, AeaReader, AeaWriter};
 use ratrac::atrac1::decoder::Atrac1Decoder;
 use ratrac::atrac1::encoder::Atrac1Encoder;
-use ratrac::atrac1::{Atrac1EncodeSettings, NUM_SAMPLES, WindowMode};
+use ratrac::atrac1::{Atrac1EncodeSettings, NUM_SAMPLES, Quality, WindowMode};
 use ratrac::audio_input::{AudioReader, FrameReader};
 use ratrac::wav_output::WavWriter;
 
@@ -41,6 +41,10 @@ enum Commands {
         /// Disable transient detection (optional window mask: 0-7)
         #[arg(long)]
         notransient: Option<Option<u32>>,
+
+        /// Quality preset: fast (reference-equivalent) or best (look-ahead + AbS)
+        #[arg(long, default_value = "best")]
+        quality: String,
     },
     /// Decode an ATRAC1 (.aea) file to WAV
     Decode {
@@ -83,6 +87,7 @@ fn encode(
     bfu_idx_const: u32,
     bfu_idx_fast: bool,
     notransient: Option<Option<u32>>,
+    quality: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Open audio stream (no full file load)
     let reader = AudioReader::open(input)?;
@@ -131,11 +136,21 @@ fn encode(
         None => (WindowMode::Auto, 0),
     };
 
+    let quality_preset = match quality {
+        "fast" => Quality::Fast,
+        "best" => Quality::Best,
+        _ => {
+            eprintln!("  Unknown quality '{}', using 'best'", quality);
+            Quality::Best
+        }
+    };
+
     let settings = Atrac1EncodeSettings {
         bfu_idx_const,
         fast_bfu_num_search: bfu_idx_fast,
         window_mode,
         window_mask,
+        quality: quality_preset,
     };
 
     let mut encoder = Atrac1Encoder::new(settings);
@@ -176,6 +191,12 @@ fn encode(
         }
         frame_count += 1;
         pb.inc(1);
+    }
+
+    // Flush look-ahead buffer (yields remaining delayed frames)
+    let final_frames = encoder.flush(num_channels);
+    for frame in &final_frames {
+        writer.write_frame(frame)?;
     }
 
     writer.flush()?;
@@ -239,7 +260,15 @@ fn main() {
             bfuidxconst,
             bfuidxfast,
             notransient,
-        } => encode(input, output, *bfuidxconst, *bfuidxfast, *notransient),
+            quality,
+        } => encode(
+            input,
+            output,
+            *bfuidxconst,
+            *bfuidxfast,
+            *notransient,
+            quality,
+        ),
         Commands::Decode { input, output } => decode(input, output),
     };
 

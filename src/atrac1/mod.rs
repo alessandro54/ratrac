@@ -106,6 +106,15 @@ impl BlockSizeMod {
     }
 }
 
+/// Quality preset for the encoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quality {
+    /// Fast: zero-latency, reference-equivalent (C++ compatible)
+    Fast,
+    /// Best: look-ahead transient detection + analysis-by-synthesis bit allocation
+    Best,
+}
+
 /// Encoder settings for ATRAC1.
 #[derive(Debug, Clone)]
 pub struct Atrac1EncodeSettings {
@@ -113,6 +122,7 @@ pub struct Atrac1EncodeSettings {
     pub fast_bfu_num_search: bool,
     pub window_mode: WindowMode,
     pub window_mask: u32,
+    pub quality: Quality,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +138,7 @@ impl Default for Atrac1EncodeSettings {
             fast_bfu_num_search: false,
             window_mode: WindowMode::Auto,
             window_mask: 0,
+            quality: Quality::Best,
         }
     }
 }

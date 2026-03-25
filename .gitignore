@@ -1,7 +1,11 @@
 .vscode/
 .idea/
+.claude/
+
 
 /target
-.DS_Store
 
-/build
+build/
+samples/
+
+.DS_Store

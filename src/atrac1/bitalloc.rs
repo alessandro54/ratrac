@@ -268,6 +268,134 @@ fn get_max_used_bfu_id(bits_per_block: &[u32]) -> u32 {
     idx
 }
 
+/// Simulate exact quantization → dequantization noise in PHYSICAL domain.
+/// Uses the scale factor to convert from normalized [-1,1] back to true amplitude.
+/// Returns squared physical noise power.
+fn physical_noise_power(scaled_val: f32, word_length: u32, sf_index: u8) -> f32 {
+    let scale_table = &*crate::atrac1::SCALE_TABLE;
+    let sf = scale_table[sf_index as usize];
+
+    if word_length < 2 {
+        // Zero bits: decoder outputs 0.0. Error = entire physical signal.
+        let phys = scaled_val * sf;
+        return phys * phys;
+    }
+
+    // Bit-exact encoder math (matches write_bitstream)
+    let mul = ((1u32 << (word_length - 1)) - 1) as f32;
+    let quantized_int = to_int(scaled_val * mul);
+
+    // Bit-exact decoder math (matches dequantiser)
+    let reconstructed = quantized_int as f32 / mul;
+
+    // Error in physical domain
+    let phys_error = (scaled_val - reconstructed) * sf;
+    phys_error * phys_error
+}
+
+/// Compute per-BFU physical noise power and signal power.
+/// Returns (noise_power, signal_power) per BFU.
+fn compute_bfu_physical_noise(
+    bits_per_block: &[u32],
+    scaled_blocks: &[ScaledBlock],
+) -> Vec<(f32, f32)> {
+    let n = bits_per_block.len();
+    let mut result = vec![(0.0f32, 0.0f32); n];
+    let scale_table = &*crate::atrac1::SCALE_TABLE;
+
+    for i in 0..n {
+        let sf = scale_table[scaled_blocks[i].scale_factor_index as usize];
+        let mut noise = 0.0f32;
+        let mut signal = 0.0f32;
+        for &val in &scaled_blocks[i].values {
+            noise += physical_noise_power(val, bits_per_block[i], scaled_blocks[i].scale_factor_index);
+            let phys = val * sf;
+            signal += phys * phys;
+        }
+        result[i] = (noise, signal);
+    }
+
+    result
+}
+
+/// Analysis-by-Synthesis bit reallocation using physical-domain NMR.
+/// Steals bits from BFUs where noise is well below the masking threshold,
+/// gives them to BFUs where noise is closest to (or above) the threshold.
+fn abs_reallocate(
+    bits_per_block: &mut [u32],
+    scaled_blocks: &[ScaledBlock],
+    ath_long: &[f32],
+    loudness: f32,
+) {
+    let n = bits_per_block.len();
+    if n < 2 {
+        return;
+    }
+
+    for _ in 0..6 {
+        let phys = compute_bfu_physical_noise(bits_per_block, scaled_blocks);
+
+        // Compute NMR: physical_noise / masking_threshold
+        // NMR > 1.0 = noise above threshold (audible!)
+        // NMR < 0.01 = noise deeply buried (can steal bits)
+        let nmr: Vec<f32> = (0..n)
+            .map(|i| {
+                let mask = (ath_long[i] * loudness).max(1e-15);
+                phys[i].0 / mask
+            })
+            .collect();
+
+        // Find worst BFU (highest NMR)
+        let mut worst_bfu = None;
+        let mut max_nmr = f32::MIN;
+        for i in 0..n {
+            if bits_per_block[i] >= 16 || bits_per_block[i] < 2 {
+                continue;
+            }
+            if nmr[i] > max_nmr {
+                max_nmr = nmr[i];
+                worst_bfu = Some(i);
+            }
+        }
+
+        // Find best donor (lowest NMR)
+        let mut best_bfu = None;
+        let mut min_nmr = f32::MAX;
+        for i in 0..n {
+            if bits_per_block[i] < 3 {
+                continue;
+            }
+            if nmr[i] < min_nmr {
+                min_nmr = nmr[i];
+                best_bfu = Some(i);
+            }
+        }
+
+        match (worst_bfu, best_bfu) {
+            (Some(w), Some(b)) if w != b => {
+                // Only swap if worst has at least 10x more NMR than best
+                if max_nmr < min_nmr * 10.0 {
+                    break;
+                }
+
+                // Budget check: ensure total doesn't exceed max
+                let cost = SPECS_PER_BLOCK[w] as i32;
+                let freed = SPECS_PER_BLOCK[b] as i32;
+                let budget_change = cost - freed;
+
+                // Allow ±20 bits slack (safety cap handles overflow later)
+                if budget_change <= 20 {
+                    bits_per_block[w] += 1;
+                    bits_per_block[b] -= 1;
+                } else {
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+}
+
 /// Full bit allocation + bitstream write for one ATRAC1 frame.
 /// Returns (frame_bytes, num_bfus_used).
 pub fn write_frame(
@@ -450,6 +578,12 @@ pub fn write_frame(
             None => break,
         }
     }
+
+    // Analysis-by-Synthesis: NMR-driven bit reallocation.
+    // Measure quantization noise vs masking threshold per BFU,
+    // then Robin Hood bits from over-masked to under-masked BFUs.
+    let ath_long = &*ATH_LONG;
+    abs_reallocate(&mut bits_per_block, scaled_blocks, ath_long, loudness);
 
     let frame = write_bitstream(&bits_per_block, scaled_blocks, bfu_idx, block_size);
     (frame, BFU_AMOUNT_TAB[bfu_idx as usize])

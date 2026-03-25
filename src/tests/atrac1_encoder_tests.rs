@@ -9,7 +9,11 @@ fn temp_path(name: &str) -> PathBuf {
 }
 
 fn default_encoder() -> Atrac1Encoder {
-    Atrac1Encoder::new(Atrac1EncodeSettings::default())
+    // Use Fast quality for unit tests (no look-ahead delay)
+    Atrac1Encoder::new(Atrac1EncodeSettings {
+        quality: crate::atrac1::Quality::Fast,
+        ..Default::default()
+    })
 }
 
 // --- Basic encode tests ---

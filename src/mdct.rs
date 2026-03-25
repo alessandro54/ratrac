@@ -14,14 +14,15 @@ fn calc_sin_cos(n: usize, scale: f32) -> Vec<f32> {
     tmp
 }
 
-/// Forward MDCT: N input samples -> N/2 output coefficients.
+/// Forward MDCT with f64 internal precision.
+/// Takes f32 input, computes in f64, returns f32 output.
 pub struct Mdct {
     n: usize,
-    sin_cos: Vec<f32>,
-    fft_in: Vec<Complex<f32>>,
-    fft_out: Vec<Complex<f32>>,
+    sin_cos: Vec<f64>,
+    fft_in: Vec<Complex<f64>>,
+    fft_out: Vec<Complex<f64>>,
     buf: Vec<f32>,
-    planner: std::sync::Arc<dyn rustfft::Fft<f32>>,
+    planner: std::sync::Arc<dyn rustfft::Fft<f64>>,
 }
 
 impl Mdct {
@@ -29,9 +30,19 @@ impl Mdct {
         let n4 = n / 4;
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(n4);
+
+        let scale_d = (scale as f64 / n as f64).sqrt();
+        let alpha = 2.0 * std::f64::consts::PI / (8.0 * n as f64);
+        let omega = 2.0 * std::f64::consts::PI / n as f64;
+        let mut sin_cos = vec![0.0f64; n / 2];
+        for i in 0..n4 {
+            sin_cos[2 * i] = scale_d * (omega * i as f64 + alpha).cos();
+            sin_cos[2 * i + 1] = scale_d * (omega * i as f64 + alpha).sin();
+        }
+
         Self {
             n,
-            sin_cos: calc_sin_cos(n, scale),
+            sin_cos,
             fft_in: vec![Complex::new(0.0, 0.0); n4],
             fft_out: vec![Complex::new(0.0, 0.0); n4],
             buf: vec![0.0; n / 2],
@@ -46,24 +57,19 @@ impl Mdct {
         let n4 = n / 4;
         let n34 = 3 * n4;
 
-        // Pre-rotation: build complex FFT input
-        // First loop: i in 0..n4 step 2 (but we index sin_cos by pairs)
         for i in (0..n4).step_by(2) {
-            let r0 = input[n34 - 1 - i] + input[n34 + i];
-            let i0 = input[n4 + i] - input[n4 - 1 - i];
+            let r0 = input[n34 - 1 - i] as f64 + input[n34 + i] as f64;
+            let i0 = input[n4 + i] as f64 - input[n4 - 1 - i] as f64;
 
             let c = self.sin_cos[i];
             let s = self.sin_cos[i + 1];
 
-            // sin_cos is interleaved [cos, sin, cos, sin, ...]
-            // index i corresponds to pair i/2
             self.fft_in[i / 2] = Complex::new(r0 * c + i0 * s, i0 * c - r0 * s);
         }
 
-        // Second loop: i in n4..n2 step 2
         for i in (n4..n2).step_by(2) {
-            let r0 = input[n34 - 1 - i] - input[i - n4];
-            let i0 = input[n4 + i] + input[5 * n4 - 1 - i];
+            let r0 = input[n34 - 1 - i] as f64 - input[i - n4] as f64;
+            let i0 = input[n4 + i] as f64 + input[5 * n4 - 1 - i] as f64;
 
             let c = self.sin_cos[i];
             let s = self.sin_cos[i + 1];
@@ -71,11 +77,9 @@ impl Mdct {
             self.fft_in[i / 2] = Complex::new(r0 * c + i0 * s, i0 * c - r0 * s);
         }
 
-        // FFT
         self.fft_out.copy_from_slice(&self.fft_in);
         self.planner.process(&mut self.fft_out);
 
-        // Post-rotation
         for i in (0..n2).step_by(2) {
             let r0 = self.fft_out[i / 2].re;
             let i0 = self.fft_out[i / 2].im;
@@ -83,8 +87,8 @@ impl Mdct {
             let c = self.sin_cos[i];
             let s = self.sin_cos[i + 1];
 
-            self.buf[i] = -r0 * c - i0 * s;
-            self.buf[n2 - 1 - i] = -r0 * s + i0 * c;
+            self.buf[i] = (-r0 * c - i0 * s) as f32;
+            self.buf[n2 - 1 - i] = (-r0 * s + i0 * c) as f32;
         }
 
         &self.buf
@@ -233,10 +237,7 @@ impl Midct64 {
             let c = self.sin_cos[i];
             let s = self.sin_cos[i + 1];
 
-            self.fft_in[i / 2] = Complex::new(
-                -2.0 * (i0 * s + r0 * c),
-                -2.0 * (i0 * c - r0 * s),
-            );
+            self.fft_in[i / 2] = Complex::new(-2.0 * (i0 * s + r0 * c), -2.0 * (i0 * c - r0 * s));
         }
 
         self.fft_out.copy_from_slice(&self.fft_in);

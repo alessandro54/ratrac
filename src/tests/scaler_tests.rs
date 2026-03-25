@@ -159,7 +159,8 @@ fn test_quant_mantisas_energy_preservation() {
         max_diff: f32,
     }
 
-    let test_data = [TestData {
+    let test_data = [
+        TestData {
             input: vec![-2.35, -0.84, 0.65, -1.39, 1.25, -0.41, -0.85, 0.89],
             scale: 2.35001,
             q: 2.5,
@@ -176,7 +177,8 @@ fn test_quant_mantisas_energy_preservation() {
             scale: 1.0,
             q: 15.5,
             max_diff: 0.03,
-        }];
+        },
+    ];
 
     for (idx, td) in test_data.iter().enumerate() {
         let scaled: Vec<f32> = td.input.iter().map(|&x| x / td.scale).collect();

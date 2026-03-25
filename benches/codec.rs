@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use ratrac::atrac1::bitalloc::write_frame;
 use ratrac::atrac1::decoder::Atrac1Decoder;
