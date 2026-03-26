@@ -570,7 +570,7 @@ fn abs_reallocate(
 
     // Per-BFU tonality: tonal BFUs (guitar solo) need strict masking,
     // noisy BFUs (cymbals) can tolerate more quantization noise.
-    let per_bfu_tonality: Vec<f32> = (0..n)
+    let per_bfu_sfm: Vec<f32> = (0..n)
         .map(|i| {
             let vals = &scaled_blocks[i].values;
             if vals.len() < 2 {
@@ -584,21 +584,27 @@ fn abs_reallocate(
             let log_sum = energies.iter().map(|e| e.ln()).sum::<f64>() / energies.len() as f64;
             let geom = log_sum.exp();
             let sfm = (geom / arith.max(1e-20)) as f32;
-            // 1.0 for pure tones (strict NMR), up to 3.0 for noise (relaxed NMR)
-            1.0 + 2.0 * sfm.clamp(0.0, 1.0)
+            sfm.clamp(0.0, 1.0) // raw tonality: 0=tonal, 1=noise
         })
         .collect();
 
     for _ in 0..ABS_ITERATIONS {
         let noise = measure_bfu_noise(bits_per_block, scaled_blocks);
 
-        // NMR per BFU using combined masking:
-        // max(ATH, bark_spreading) × loudness × per_bfu_tonality
+        // Asymmetric masking: tones are bad at masking noise (strict threshold),
+        // but noise is great at masking tones (relaxed threshold).
+        //   α = per-BFU tonality index (0=tonal, 1=noise)
+        //   mask_tonal = base × 1.0  (strict — protect harmonics)
+        //   mask_noise = base × 4.0  (relaxed — noise hides everything)
+        //   mask_final = α × mask_noise + (1-α) × mask_tonal
         let nmr: Vec<f32> = (0..n)
             .map(|i| {
-                let ath = ath_long[i] * loudness;
-                let combined_mask = ath.max(spread_mask[i]) * per_bfu_tonality[i];
-                noise[i].0 / combined_mask.max(1e-15)
+                let base_mask = ath_long[i].max(spread_mask[i]) * loudness;
+                let alpha = per_bfu_sfm[i]; // 0=tonal, 1=noise
+                let mask_tonal = base_mask * 1.0;
+                let mask_noise = base_mask * 4.0;
+                let mask_final = alpha * mask_noise + (1.0 - alpha) * mask_tonal;
+                noise[i].0 / mask_final.max(1e-15)
             })
             .collect();
 
