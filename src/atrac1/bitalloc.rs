@@ -457,11 +457,93 @@ fn measure_bfu_noise(bits_per_block: &[u32], scaled_blocks: &[ScaledBlock]) -> V
     result
 }
 
+/// Approximate bark frequency for a BFU center.
+/// Uses the Traunmüller formula: bark = 26.81 * f / (1960 + f) - 0.53
+fn bfu_bark(bfu: usize) -> f32 {
+    let freq =
+        (SPECS_START_LONG[bfu] as f32 + SPECS_PER_BLOCK[bfu] as f32 / 2.0) * 44100.0 / 1024.0;
+    26.81 * freq / (1960.0 + freq) - 0.53
+}
+
+/// Bark-scale spreading: loud BFUs raise the masking threshold of neighbors.
+///
+/// The human inner ear's basilar membrane vibrates broadly — a loud 1 kHz tone
+/// masks quiet sounds at 0.9 and 1.1 kHz. We model this by "spreading" each
+/// BFU's signal energy to its neighbors with frequency-dependent decay:
+/// - Upper slope: -25 dB/bark (masking falls off quickly above the masker)
+/// - Lower slope: -10 dB/bark (masking extends further below the masker)
+/// - Masking offset: -14 dB (noise floor sits below the masker)
+fn compute_spread_masking(scaled_blocks: &[ScaledBlock], n: usize) -> Vec<f32> {
+    let mut mask = vec![0.0f32; n];
+
+    for i in 0..n {
+        let energy = scaled_blocks[i].max_energy;
+        if energy <= 0.0 {
+            continue;
+        }
+        let masker_db = 10.0 * energy.log10();
+        let bark_i = bfu_bark(i);
+
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let bark_dist = bfu_bark(j) - bark_i;
+
+            // Asymmetric spreading: easier to mask above than below
+            let spread_db = if bark_dist > 0.0 {
+                masker_db - 25.0 * bark_dist // upper slope
+            } else {
+                masker_db - 10.0 * bark_dist.abs() // lower slope
+            };
+
+            // The masking floor is ~18 dB below the masker (conservative)
+            let mask_db = spread_db - 18.0;
+
+            if mask_db > -100.0 {
+                let mask_linear = 10.0_f32.powf(mask_db / 10.0);
+                if mask_linear > mask[j] {
+                    mask[j] = mask_linear;
+                }
+            }
+        }
+    }
+
+    mask
+}
+
+/// Spectral Flatness Measure (SFM) for a set of BFU energies.
+///
+/// SFM = geometric_mean / arithmetic_mean of the energy values.
+/// - SFM ≈ 1.0 → noise-like (flat spectrum, like cymbals)
+/// - SFM ≈ 0.0 → tonal (peaked spectrum, like a flute)
+///
+/// For tonal frames, quantization noise is easily audible (stricter NMR).
+/// For noisy frames, noise hides in the chaos (relaxed NMR).
+fn spectral_flatness(scaled_blocks: &[ScaledBlock], n: usize) -> f32 {
+    if n == 0 {
+        return 0.5;
+    }
+
+    let energies: Vec<f64> = (0..n)
+        .map(|i| (scaled_blocks[i].max_energy as f64).max(1e-20))
+        .collect();
+
+    let arithmetic_mean = energies.iter().sum::<f64>() / n as f64;
+    let log_sum: f64 = energies.iter().map(|&e| e.ln()).sum::<f64>() / n as f64;
+    let geometric_mean = log_sum.exp();
+
+    let sfm = (geometric_mean / arithmetic_mean.max(1e-20)) as f32;
+    sfm.clamp(0.0, 1.0)
+}
+
 /// Robin Hood bit reallocation based on Noise-to-Mask Ratio (NMR).
 ///
 /// For each BFU, NMR = physical_noise / masking_threshold.
-/// - High NMR → noise is audible → needs more bits
-/// - Low NMR → noise is buried → can spare bits
+/// The masking threshold combines:
+/// - ATH (absolute threshold of hearing)
+/// - Bark-scale spreading (loud neighbors raise the threshold)
+/// - Spectral flatness (noisy frames get relaxed thresholds)
 ///
 /// The loop steals 1 bit from the most over-masked BFU and gives it
 /// to the most under-masked one, up to `ABS_ITERATIONS` times.
@@ -476,12 +558,32 @@ fn abs_reallocate(
         return;
     }
 
+    // Spectral flatness: tonal frames need stricter masking
+    let sfm = spectral_flatness(scaled_blocks, n);
+
+    // Only apply bark spreading for noise-like content (SFM > 0.3).
+    // For tonal content (classical, clean instruments), spreading steals
+    // bits from quiet melodic lines — counterproductive.
+    let spread_mask = if sfm > 0.2 {
+        compute_spread_masking(scaled_blocks, n)
+    } else {
+        vec![0.0f32; n] // no spreading for tonal content
+    };
+
+    // Tonality factor: 1.0 for tonal (strict), up to 3.0 for noisy (relaxed)
+    let tonality_boost = 1.0 + 2.0 * sfm;
+
     for _ in 0..ABS_ITERATIONS {
         let noise = measure_bfu_noise(bits_per_block, scaled_blocks);
 
-        // NMR per BFU: noise / masking threshold
+        // Combined masking threshold per BFU:
+        // max(ATH, spreading) × loudness × tonality_boost
         let nmr: Vec<f32> = (0..n)
-            .map(|i| noise[i].0 / (ath_long[i] * loudness).max(1e-15))
+            .map(|i| {
+                let ath = ath_long[i] * loudness;
+                let combined_mask = ath.max(spread_mask[i]) * tonality_boost;
+                noise[i].0 / combined_mask.max(1e-15)
+            })
             .collect();
 
         // Find the BFU with the worst (highest) NMR — needs more bits
@@ -498,8 +600,11 @@ fn abs_reallocate(
 
         match (worst, donor) {
             (Some(w), Some(d)) if w != d && nmr[w] > nmr[d] * ABS_NMR_RATIO => {
+                // Strict budget check: only swap if total stays within frame capacity
                 let budget_change = SPECS_PER_BLOCK[w] as i32 - SPECS_PER_BLOCK[d] as i32;
-                if budget_change <= ABS_BUDGET_SLACK {
+                let current_total = count_data_bits(bits_per_block);
+                let max_budget = data_bits_available(bits_per_block.len()) as u32;
+                if current_total as i32 + budget_change <= max_budget as i32 {
                     bits_per_block[w] += 1;
                     bits_per_block[d] -= 1;
                 } else {

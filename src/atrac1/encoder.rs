@@ -37,8 +37,15 @@ impl BandTransientDetectors {
 
 /// Fast time-domain transient detector for look-ahead.
 /// Scans raw PCM (before QMF) for sudden energy spikes.
+///
+/// Tuned to trigger only on violent transients (snare hits, hard consonants).
+/// False positives waste bits on short-window overhead. The ratio of 12.0
+/// means energy must jump 12x (~11 dB) between consecutive 16-sample blocks.
 fn has_transient_in_pcm(pcm: &[f32]) -> bool {
-    let attack_ratio = 8.0f32;
+    // Higher ratio = fewer triggers = saves bits for audio data.
+    // 8.0 was too sensitive (triggered on minor volume bumps).
+    // 12.0 catches real attacks without starving the encoder.
+    let attack_ratio = 12.0f32;
     let mut prev_energy = 0.0001f32;
 
     for chunk in pcm.chunks(16) {
