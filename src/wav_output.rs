@@ -4,7 +4,7 @@ use std::path::Path;
 
 const BUF_SIZE: usize = 64 * 1024; // 64KB write buffer
 
-/// Simple WAV file writer (16-bit PCM only) with buffered I/O.
+/// WAV file writer (16-bit PCM) with buffered I/O.
 pub struct WavWriter {
     writer: BufWriter<File>,
     num_channels: u16,
@@ -52,9 +52,7 @@ impl WavWriter {
     }
 
     /// Write interleaved f32 samples, converting to i16.
-    /// Batches the conversion into a byte buffer before writing.
     pub fn write_samples(&mut self, samples: &[f32]) -> io::Result<()> {
-        // Convert all samples to bytes in one batch
         let mut byte_buf = Vec::with_capacity(samples.len() * 2);
         for &s in samples {
             let clamped = s.clamp(-1.0, 1.0);
