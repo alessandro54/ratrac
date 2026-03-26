@@ -558,30 +558,46 @@ fn abs_reallocate(
         return;
     }
 
-    // Spectral flatness: tonal frames need stricter masking
-    let sfm = spectral_flatness(scaled_blocks, n);
+    // Global spectral flatness (gates bark spreading)
+    let global_sfm = spectral_flatness(scaled_blocks, n);
 
-    // Only apply bark spreading for noise-like content (SFM > 0.3).
-    // For tonal content (classical, clean instruments), spreading steals
-    // bits from quiet melodic lines — counterproductive.
-    let spread_mask = if sfm > 0.2 {
+    // Only apply bark spreading for noise-like content (global SFM > 0.2).
+    let spread_mask = if global_sfm > 0.2 {
         compute_spread_masking(scaled_blocks, n)
     } else {
-        vec![0.0f32; n] // no spreading for tonal content
+        vec![0.0f32; n]
     };
 
-    // Tonality factor: 1.0 for tonal (strict), up to 3.0 for noisy (relaxed)
-    let tonality_boost = 1.0 + 2.0 * sfm;
+    // Per-BFU tonality: tonal BFUs (guitar solo) need strict masking,
+    // noisy BFUs (cymbals) can tolerate more quantization noise.
+    let per_bfu_tonality: Vec<f32> = (0..n)
+        .map(|i| {
+            let vals = &scaled_blocks[i].values;
+            if vals.len() < 2 {
+                return 1.0;
+            }
+            let energies: Vec<f64> = vals
+                .iter()
+                .map(|&v| ((v * v) as f64).max(1e-20))
+                .collect();
+            let arith = energies.iter().sum::<f64>() / energies.len() as f64;
+            let log_sum = energies.iter().map(|e| e.ln()).sum::<f64>() / energies.len() as f64;
+            let geom = log_sum.exp();
+            let sfm = (geom / arith.max(1e-20)) as f32;
+            // 1.0 for pure tones (strict NMR), up to 3.0 for noise (relaxed NMR)
+            1.0 + 2.0 * sfm.clamp(0.0, 1.0)
+        })
+        .collect();
 
     for _ in 0..ABS_ITERATIONS {
         let noise = measure_bfu_noise(bits_per_block, scaled_blocks);
 
-        // Combined masking threshold per BFU:
-        // max(ATH, spreading) × loudness × tonality_boost
+        // NMR per BFU using combined masking:
+        // max(ATH, bark_spreading) × loudness × per_bfu_tonality
         let nmr: Vec<f32> = (0..n)
             .map(|i| {
                 let ath = ath_long[i] * loudness;
-                let combined_mask = ath.max(spread_mask[i]) * tonality_boost;
+                let combined_mask = ath.max(spread_mask[i]) * per_bfu_tonality[i];
                 noise[i].0 / combined_mask.max(1e-15)
             })
             .collect();

@@ -96,6 +96,11 @@ pub struct Atrac1Encoder {
     // Loudness weighting curve (precomputed)
     loudness_curve: Vec<f32>,
 
+    // Temporal forward masking: previous frame's masking curve per channel.
+    // After a loud transient, the masking threshold stays elevated for ~50ms,
+    // allowing the encoder to save bits on the quiet frames that follow.
+    prev_masking: [[f32; 52]; 2],
+
     // Look-ahead ring buffer (only active in Quality::Best)
     delay_line: VecDeque<Vec<f32>>,
     future_transients: VecDeque<Vec<bool>>,
@@ -119,6 +124,7 @@ impl Atrac1Encoder {
             ],
             transient_detectors: [BandTransientDetectors::new(), BandTransientDetectors::new()],
             loudness: [LOUD_FACTOR as f64; 2],
+            prev_masking: [[0.0; 52]; 2],
             pcm_buf_low: [[0.0; 256 + 16]; 2],
             pcm_buf_mid: [[0.0; 256 + 16]; 2],
             pcm_buf_hi: [[0.0; 512 + 16]; 2],
@@ -195,7 +201,28 @@ impl Atrac1Encoder {
         }
 
         // Step 5: Scale factors + bit allocation + quantization + bitstream
-        let scaled = self.scaler.scale_frame(&specs, &block_size);
+        let mut scaled = self.scaler.scale_frame(&specs, &block_size);
+
+        // Step 5b: Temporal forward masking (Quality::Best only)
+        // After a loud transient, the ear is "deaf" for ~50ms. We artificially
+        // raise max_energy for quiet BFUs that follow a loud frame, telling the
+        // bit allocator they don't need as many bits.
+        if self.settings.quality == Quality::Best {
+            let decay = 0.7f32; // ~50ms decay at 11.6ms/frame ≈ 4-5 frames
+            for i in 0..scaled.len().min(52) {
+                // Combine current energy with decayed previous masking
+                let temporal_mask = self.prev_masking[ch][i] * decay;
+                if temporal_mask > scaled[i].max_energy && scaled[i].max_energy > 0.0 {
+                    // This BFU is masked by the previous frame's energy
+                    // Inflate its apparent energy so it gets fewer bits
+                    scaled[i].max_energy = temporal_mask;
+                }
+                // Update temporal masking state for next frame
+                self.prev_masking[ch][i] =
+                    self.prev_masking[ch][i].max(scaled[i].max_energy) * decay;
+            }
+        }
+
         let loudness_param = (self.loudness[ch] / LOUD_FACTOR as f64) as f32;
         let (frame, _) = write_frame(
             &scaled,

@@ -56,12 +56,8 @@ impl Scaler {
     pub fn scale(&self, input: &[f32]) -> ScaledBlock {
         let mut max_abs_spec = 0.0f32;
         for &v in input {
-            let abs_v = v.abs();
-            if abs_v > max_abs_spec {
-                max_abs_spec = abs_v;
-            }
+            max_abs_spec = max_abs_spec.max(v.abs());
         }
-
         if max_abs_spec > MAX_SCALE {
             max_abs_spec = MAX_SCALE;
         }
@@ -73,9 +69,7 @@ impl Scaler {
 
         for &v in input {
             let scaled = v / scale_factor;
-            let energy = v * v;
-            max_energy = max_energy.max(energy);
-
+            max_energy = max_energy.max(v * v);
             let clamped = if scaled.abs() >= 1.0 {
                 if scaled > 0.0 { 0.99999 } else { -0.99999 }
             } else {
