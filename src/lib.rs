@@ -1,4 +1,5 @@
 pub mod aea;
+pub mod fft;
 pub mod atrac1;
 pub mod audio_input;
 pub mod bitstream;

@@ -275,16 +275,37 @@ impl Atrac1Encoder {
             .collect()
     }
 
+    // ── Cross-Channel Masking ──────────────────────────────────────────────
+
+    /// Binaural masking: a loud signal in one channel masks noise in the other.
+    /// Bleeds 25% of each channel's loudness into the other, so the quiet channel
+    /// gets a raised noise floor and the bit allocator spends fewer bits there.
+    fn apply_cross_channel_masking(&mut self) {
+        const CROSS_BLEED: f64 = 0.25;
+        let l = self.loudness[0];
+        let r = self.loudness[1];
+        self.loudness[0] = l.max(r * CROSS_BLEED);
+        self.loudness[1] = r.max(l * CROSS_BLEED);
+    }
+
     // ── Encoding Strategies ──────────────────────────────────────────────────
 
     /// Immediate encoding: no look-ahead, no delay.
     fn encode_immediate(&mut self, pcm: &[f32], num_channels: usize) -> Vec<Vec<u8>> {
-        (0..num_channels)
+        let frames: Vec<Vec<u8>> = (0..num_channels)
             .map(|ch| {
                 let channel_pcm = deinterleave(pcm, ch, num_channels);
                 self.encode_one_channel(&channel_pcm, ch, false).0
             })
-            .collect()
+            .collect();
+
+        // Cross-channel masking: bleed 25% of each channel's masking into the other.
+        // A loud cymbal in L raises R's noise floor → saves bits in R for free.
+        if num_channels == 2 {
+            self.apply_cross_channel_masking();
+        }
+
+        frames
     }
 
     /// Look-ahead encoding: buffer one frame, analyze the next for transients,
@@ -310,7 +331,7 @@ impl Atrac1Encoder {
         // Check what's coming next (clone to release borrow on self)
         let next_transients = self.future_transients.front().cloned();
 
-        (0..num_channels)
+        let frames: Vec<Vec<u8>> = (0..num_channels)
             .map(|ch| {
                 let channel_pcm = deinterleave(&current_pcm, ch, num_channels);
                 let force_short = next_transients
@@ -319,7 +340,13 @@ impl Atrac1Encoder {
                     .unwrap_or(false);
                 self.encode_one_channel(&channel_pcm, ch, force_short).0
             })
-            .collect()
+            .collect();
+
+        if num_channels == 2 {
+            self.apply_cross_channel_masking();
+        }
+
+        frames
     }
 }
 
