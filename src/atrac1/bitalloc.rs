@@ -634,6 +634,76 @@ fn abs_reallocate(
 
 // ─── Main Entry Point ────────────────────────────────────────────────────────
 
+/// Scale factor micro-optimization: try SF+1 and SF+2 with the actual word length.
+///
+/// When quantizing `val * mul`, the rounding error depends on where `val * mul`
+/// falls relative to integer boundaries. A different scale factor shifts all values,
+/// sometimes landing them closer to integers → less rounding error → free SNR.
+fn optimize_scale_factors(scaled_blocks: &mut [ScaledBlock], bits_per_block: &[u32]) {
+    let scale_table = &*crate::atrac1::SCALE_TABLE;
+
+    for i in 0..scaled_blocks.len().min(bits_per_block.len()) {
+        let wl = bits_per_block[i];
+        if wl < MIN_USEFUL_WORD_LENGTH {
+            continue;
+        }
+
+        let mul = ((1u32 << (wl - 1)) - 1) as f32;
+        let base_sf_idx = scaled_blocks[i].scale_factor_index;
+        let base_sf = scale_table[base_sf_idx as usize];
+
+        // Measure error with current SF
+        let base_error: f32 = scaled_blocks[i]
+            .values
+            .iter()
+            .map(|&val| {
+                let q = to_int(val * mul) as f32 / mul;
+                let e = (val - q) * base_sf;
+                e * e
+            })
+            .sum();
+
+        let mut best_error = base_error;
+        let mut best_idx = base_sf_idx;
+
+        for offset in 1..=2u8 {
+            let candidate_idx = base_sf_idx.saturating_add(offset);
+            if candidate_idx >= 64 {
+                break;
+            }
+            let candidate_sf = scale_table[candidate_idx as usize];
+
+            // Re-scale values with the larger SF and measure quantization error
+            let error: f32 = scaled_blocks[i]
+                .values
+                .iter()
+                .map(|&val| {
+                    let phys = val * base_sf;
+                    let rescaled = (phys / candidate_sf).clamp(-0.99999, 0.99999);
+                    let q = to_int(rescaled * mul) as f32 / mul;
+                    let e = (rescaled - q) * candidate_sf;
+                    e * e
+                })
+                .sum();
+
+            if error < best_error {
+                best_error = error;
+                best_idx = candidate_idx;
+            }
+        }
+
+        // Apply the better SF if found
+        if best_idx != base_sf_idx {
+            let new_sf = scale_table[best_idx as usize];
+            for val in &mut scaled_blocks[i].values {
+                let phys = *val * base_sf;
+                *val = (phys / new_sf).clamp(-0.99999, 0.99999);
+            }
+            scaled_blocks[i].scale_factor_index = best_idx;
+        }
+    }
+}
+
 /// Allocate bits and write one ATRAC1 frame (212 bytes).
 ///
 /// This is the main encoder entry point for a single channel's spectral data.
@@ -753,8 +823,15 @@ pub fn write_frame(
     // ── Step 6: Analysis-by-Synthesis ──
     abs_reallocate(&mut bits_per_block, scaled_blocks, &ATH_LONG, loudness);
 
+    // ── Step 6b: Scale factor micro-optimization ──
+    // Now that we know the actual word lengths, try SF+1 and SF+2 for each BFU.
+    // A slightly larger SF can align quantization steps better with the data,
+    // reducing rounding error without spending extra bits.
+    let mut optimized_blocks = scaled_blocks.to_vec();
+    optimize_scale_factors(&mut optimized_blocks, &bits_per_block);
+
     // ── Step 7: Write bitstream ──
-    let frame = write_bitstream(&bits_per_block, scaled_blocks, bfu_idx, block_size);
+    let frame = write_bitstream(&bits_per_block, &optimized_blocks, bfu_idx, block_size);
     (frame, BFU_AMOUNT_TAB[bfu_idx as usize])
 }
 
